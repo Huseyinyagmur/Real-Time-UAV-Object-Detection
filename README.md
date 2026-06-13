@@ -1,101 +1,168 @@
-# UAV Object Detection System
+# Gerçek Zamanlı İHA Nesne Tespit Sistemi
 
-Drone/İHA görüntülerinden insan ve araç tespiti yapmayı amaçlayan gerçek
-zamanlı görüntü işleme projesi.
+Bu proje, İHA (İnsansız Hava Aracı) görüntülerinden insan ve araç tespiti yapabilen gerçek zamanlı bir bilgisayarlı görü sistemi geliştirmek amacıyla hazırlanmıştır.
 
-Bu aşamada proje, VisDrone2019-DET veri setini Ultralytics YOLO biçimine
-dönüştürür. Model eğitimi henüz yapılmaz.
+Proje kapsamında VisDrone2019 veri seti kullanılmış ve YOLO tabanlı nesne tespit modelleri eğitilmiştir.
 
-## Desteklenen sınıflar
+---
 
-VisDrone sınıflarının tamamı korunur ve YOLO için `0-9` aralığına dönüştürülür:
+# Proje Amacı
 
-| YOLO ID | Sınıf |
-| ---: | --- |
-| 0 | pedestrian |
-| 1 | people |
-| 2 | bicycle |
-| 3 | car |
-| 4 | van |
-| 5 | truck |
-| 6 | tricycle |
-| 7 | awning-tricycle |
-| 8 | bus |
-| 9 | motor |
+Yüksekten çekilmiş drone görüntülerinde bulunan insan ve araçları tespit edebilen bir sistem geliştirmek.
 
-VisDrone'daki `ignored regions` (`class_id=0`) ve `score=0` kayıtları YOLO
-etiketlerine yazılmaz.
+Uzun vadeli hedefler:
 
-## Kurulum
+- Gerçek zamanlı nesne tespiti
+- Nesne takibi (Object Tracking)
+- Hareket yönü analizi
+- Koordinat çıkarımı
+- Hız tahmini
+- Çoklu nesne takibi
+- İHA gözetleme sistemleri için temel oluşturma
 
-PowerShell:
+---
 
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+# Veri Seti
 
-Ham veri seti şu dizinlerde bulunmalıdır:
+Bu projede VisDrone2019 Detection veri seti kullanılmıştır.
+
+Orijinal veri setindeki sınıflar:
+
+- pedestrian
+- people
+- bicycle
+- car
+- van
+- truck
+- tricycle
+- awning-tricycle
+- bus
+- motor
+
+Proje için sınıflar sadeleştirilmiştir.
+
+| Sınıf ID | Sınıf  |
+| -------- | ------ |
+| 0        | Person |
+| 1        | Car    |
+| 2        | Truck  |
+| 3        | Bus    |
+
+Dönüştürme işlemi:
+
+- pedestrian + people → person
+- car + van → car
+- truck → truck
+- bus → bus
+
+Diğer sınıflar eğitimden çıkarılmıştır.
+
+---
+
+# Veri Ön İşleme
+
+Veri seti doğrudan YOLO formatında bulunmadığı için özel Python scriptleri geliştirilmiştir.
+
+Yapılan işlemler:
+
+- VisDrone annotation dosyalarının okunması
+- YOLO formatına dönüştürülmesi
+- Bounding Box koordinatlarının normalize edilmesi
+- Eğitim/Doğrulama/Test yapısının oluşturulması
+- Hatalı annotation satırlarının temizlenmesi
+
+Veri seti istatistikleri:
+
+- Eğitim Görüntüsü: 6471
+- Doğrulama Görüntüsü: 548
+- Test Görüntüsü: 1610
+- Toplam Nesne Sayısı: 392854
+
+---
+
+# Kullanılan Teknolojiler
+
+- Python 3.11
+- PyTorch
+- Ultralytics YOLO
+- OpenCV
+- NumPy
+- CUDA 12.4
+- NVIDIA RTX 4050 Laptop GPU
+
+---
+
+# Model Sonuçları
+
+## YOLOv8n (50 Epoch)
+
+| Metrik    | Sonuç |
+| --------- | ----- |
+| Precision | 0.634 |
+| Recall    | 0.433 |
+| mAP50     | 0.470 |
+| mAP50-95  | 0.279 |
+
+Sınıf bazında mAP50 sonuçları:
+
+| Sınıf  | mAP50 |
+| ------ | ----- |
+| Person | 0.397 |
+| Car    | 0.764 |
+| Truck  | 0.295 |
+| Bus    | 0.423 |
+
+---
+
+## YOLOv8s (50 Epoch)
+
+Eğitim devam ediyor...
+
+---
+
+## YOLO11n
+
+Planlanıyor.
+
+---
+
+## YOLO11s
+
+Planlanıyor.
+
+---
+
+# Proje Yapısı
 
 ```text
-dataset/raw/
-├── VisDrone2019-DET-train/
-│   ├── images/
-│   └── annotations/
-├── VisDrone2019-DET-val/
-│   ├── images/
-│   └── annotations/
-└── VisDrone2019-DET-test-dev/
-    ├── images/
-    └── annotations/
+Real-Time-UAV-Object-Detection
+├── src
+├── outputs
+├── data_4class.yaml
+├── requirements.txt
+├── README.md
+└── .gitignore
 ```
 
-## Dönüştürme
+---
 
-Proje kök dizininden:
+# Gelecek Çalışmalar
 
-```powershell
-python src/convert_visdrone_to_yolo.py
-```
+- YOLO11 model karşılaştırmaları
+- Gerçek zamanlı video işleme
+- ByteTrack entegrasyonu
+- Çoklu nesne takibi
+- Nesne hareket yönü analizi
+- Koordinat çıkarımı
+- Hız tahmini
+- Gözetleme paneli geliştirilmesi
 
-Yalnızca belirli bölümleri dönüştürmek için:
+---
 
-```powershell
-python src/convert_visdrone_to_yolo.py --splits train val
-```
+# Sonuç
 
-Özel kaynak ve çıktı yolları da verilebilir:
+Bu proje kapsamında drone görüntülerinden insan ve araç tespiti yapabilen bir YOLO tabanlı nesne tespit sistemi geliştirilmiştir. Sistem GPU destekli olarak eğitilmiş ve VisDrone veri seti üzerinde başarılı sonuçlar elde edilmiştir.
 
-```powershell
-python src/convert_visdrone_to_yolo.py `
-  --raw-dir D:\datasets\VisDrone `
-  --output-dir D:\datasets\VisDrone-YOLO
-```
+Proje ilerleyen aşamalarda nesne takibi ve hareket analizi özellikleri ile genişletilecektir.
 
-Betik tekrar çalıştırılabilir. Aynı boyuttaki mevcut görüntüler yeniden
-kopyalanmaz; etiketler güncel annotation içeriğinden yeniden oluşturulur.
-
-## Üretilen yapı
-
-```text
-dataset/yolo/
-├── dataset.yaml
-├── images/
-│   ├── train/
-│   ├── val/
-│   └── test/
-└── labels/
-    ├── train/
-    ├── val/
-    └── test/
-```
-
-Her YOLO etiketi şu normalize edilmiş biçimdedir:
-
-```text
-class_id x_center y_center width height
-```
-
-`dataset/yolo/dataset.yaml`, sonraki aşamada Ultralytics eğitim komutuna
-verilecek veri seti yapılandırmasıdır.
+---
