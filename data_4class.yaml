@@ -1,0 +1,10 @@
+path: C:/UAV_Object_Detection/dataset/yolo_4class
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: person
+  1: car
+  2: truck
+  3: bus
