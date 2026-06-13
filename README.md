@@ -116,7 +116,12 @@ Sınıf bazında mAP50 sonuçları:
 
 ## YOLOv8s (50 Epoch)
 
-Eğitim devam ediyor...
+| Metric    | Value |
+| --------- | ----- |
+| Precision | 0.688 |
+| Recall    | 0.514 |
+| mAP50     | 0.552 |
+| mAP50-95  | 0.342 |
 
 ---
 
