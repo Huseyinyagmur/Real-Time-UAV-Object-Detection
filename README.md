@@ -116,12 +116,21 @@ Sınıf bazında mAP50 sonuçları:
 
 ## YOLOv8s (50 Epoch)
 
-| Metric    | Value |
+| Metrik    | Sonuç |
 | --------- | ----- |
 | Precision | 0.688 |
 | Recall    | 0.514 |
 | mAP50     | 0.552 |
 | mAP50-95  | 0.342 |
+
+Sınıf bazında sonuçlar:
+
+| Sınıf  | Precision | Recall | mAP50 | mAP50-95 |
+| ------ | --------- | ------ | ----- | -------- |
+| Person | 0.644     | 0.449  | 0.486 | 0.194    |
+| Car    | 0.809     | 0.781  | 0.813 | 0.551    |
+| Truck  | 0.619     | 0.339  | 0.377 | 0.252    |
+| Bus    | 0.682     | 0.486  | 0.532 | 0.373    |
 
 ---
 
