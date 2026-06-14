@@ -9,6 +9,10 @@ dataset/yolo_4class/
 
 models/*
 !models/.gitkeep
-outputs/*
-!outputs/.gitkeep
+
+# Runtime inference outputs
+outputs/videos/
+outputs/logs/
+
 *.pt
+data/sample_videos/
