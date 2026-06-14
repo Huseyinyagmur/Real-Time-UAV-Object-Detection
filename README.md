@@ -2,7 +2,7 @@
 
 Bu proje, İHA (İnsansız Hava Aracı) görüntülerinden insan ve araç tespiti yapabilen gerçek zamanlı bir bilgisayarlı görü sistemi geliştirmek amacıyla hazırlanmıştır.
 
-Proje kapsamında VisDrone2019 veri seti kullanılmış ve YOLO tabanlı nesne tespit modelleri eğitilmiştir.
+Proje kapsamında VisDrone2019 veri seti kullanılmış ve YOLO tabanlı nesne tespit modelleri eğitilerek performans karşılaştırmaları yapılmıştır.
 
 ---
 
@@ -92,57 +92,33 @@ Veri seti istatistikleri:
 
 ---
 
-# Model Sonuçları
+# Model Karşılaştırması
 
-## YOLOv8n (50 Epoch)
-
-| Metrik    | Sonuç |
-| --------- | ----- |
-| Precision | 0.634 |
-| Recall    | 0.433 |
-| mAP50     | 0.470 |
-| mAP50-95  | 0.279 |
-
-Sınıf bazında mAP50 sonuçları:
-
-| Sınıf  | mAP50 |
-| ------ | ----- |
-| Person | 0.397 |
-| Car    | 0.764 |
-| Truck  | 0.295 |
-| Bus    | 0.423 |
+| Model   | Epoch | Giriş Boyutu | Precision | Recall | mAP50 | mAP50-95 |
+| ------- | ----- | ------------ | --------- | ------ | ----- | -------- |
+| YOLOv8n | 50    | 640          | 0.634     | 0.433  | 0.470 | 0.279    |
+| YOLOv8s | 50    | 640          | 0.688     | 0.514  | 0.552 | 0.342    |
+| YOLO11n | 36    | 960          | 0.682     | 0.524  | 0.568 | 0.359    |
 
 ---
 
-## YOLOv8s (50 Epoch)
+# YOLO11n Sonuçları (En İyi Model)
 
 | Metrik    | Sonuç |
 | --------- | ----- |
-| Precision | 0.688 |
-| Recall    | 0.514 |
-| mAP50     | 0.552 |
-| mAP50-95  | 0.342 |
+| Precision | 0.682 |
+| Recall    | 0.524 |
+| mAP50     | 0.568 |
+| mAP50-95  | 0.359 |
 
 Sınıf bazında sonuçlar:
 
 | Sınıf  | Precision | Recall | mAP50 | mAP50-95 |
 | ------ | --------- | ------ | ----- | -------- |
-| Person | 0.644     | 0.449  | 0.486 | 0.194    |
-| Car    | 0.809     | 0.781  | 0.813 | 0.551    |
-| Truck  | 0.619     | 0.339  | 0.377 | 0.252    |
-| Bus    | 0.682     | 0.486  | 0.532 | 0.373    |
-
----
-
-## YOLO11n
-
-Planlanıyor.
-
----
-
-## YOLO11s
-
-Planlanıyor.
+| Person | 0.631     | 0.487  | 0.527 | 0.224    |
+| Car    | 0.790     | 0.807  | 0.843 | 0.580    |
+| Truck  | 0.553     | 0.341  | 0.366 | 0.252    |
+| Bus    | 0.754     | 0.463  | 0.535 | 0.381    |
 
 ---
 
@@ -162,7 +138,7 @@ Real-Time-UAV-Object-Detection
 
 # Gelecek Çalışmalar
 
-- YOLO11 model karşılaştırmaları
+- YOLO11s model eğitimi ve karşılaştırması
 - Gerçek zamanlı video işleme
 - ByteTrack entegrasyonu
 - Çoklu nesne takibi
@@ -170,13 +146,16 @@ Real-Time-UAV-Object-Detection
 - Koordinat çıkarımı
 - Hız tahmini
 - Gözetleme paneli geliştirilmesi
+- Nesne yörünge analizi
 
 ---
 
 # Sonuç
 
-Bu proje kapsamında drone görüntülerinden insan ve araç tespiti yapabilen bir YOLO tabanlı nesne tespit sistemi geliştirilmiştir. Sistem GPU destekli olarak eğitilmiş ve VisDrone veri seti üzerinde başarılı sonuçlar elde edilmiştir.
+Bu proje kapsamında drone görüntülerinden insan ve araç tespiti yapabilen bir YOLO tabanlı nesne tespit sistemi geliştirilmiştir.
 
-Proje ilerleyen aşamalarda nesne takibi ve hareket analizi özellikleri ile genişletilecektir.
+YOLOv8n, YOLOv8s ve YOLO11n modelleri eğitilmiş ve karşılaştırılmıştır. Şu ana kadar elde edilen en iyi sonuç YOLO11n modeli ile mAP50 = 0.568 ve mAP50-95 = 0.359 olarak elde edilmiştir.
+
+Proje ilerleyen aşamalarda nesne takibi, hareket analizi ve gerçek zamanlı video işleme özellikleri ile genişletilecektir.
 
 ---
