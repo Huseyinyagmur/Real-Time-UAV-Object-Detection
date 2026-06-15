@@ -9,6 +9,7 @@ seçilmiştir.
 
 - VisDrone annotation verilerini dört sınıflı YOLO formatına dönüştürme
 - Video üzerinde frame bazlı YOLO11s nesne tespiti
+- ByteTrack ile çoklu nesne takibi ve kalıcı `track_id` atama
 - `Person`, `Car`, `Truck` ve `Bus` sınıflarının tespiti
 - Bounding box, sınıf adı ve güven skorunun görüntüye çizilmesi
 - Her nesnenin merkez koordinatının hesaplanması ve işaretlenmesi
@@ -16,6 +17,7 @@ seçilmiştir.
 - İşlenmiş videonun MP4 formatında kaydedilmesi
 - Tespit sonuçlarının frame bazında CSV dosyasına yazılması
 - Yerel video dosyası ve doğrudan HTTP(S) video URL desteği
+- Track geçmişi, hareket yönü ve yörünge çizimi
 - Model karşılaştırma grafikleri ve doğrulama görselleri
 
 ## Kullanılan Teknolojiler
@@ -202,6 +204,45 @@ frame,class,confidence,x1,y1,x2,y2,center_x,center_y
 `outputs/videos/` ve `outputs/logs/` çalışma zamanında otomatik oluşturulur ve
 üretilen büyük dosyalar Git tarafından takip edilmez.
 
+## ByteTrack ile Nesne Takibi
+
+Takip pipeline'ı `src/track_video.py` scriptinde bulunur. YOLO11s tespitleri
+ByteTrack ile eşleştirilerek her nesneye bir `track_id` atanır. Her ID için
+geçmiş merkez noktaları tutulur, yörünge çizilir ve hareket yönü `left`,
+`right`, `up`, `down` veya `stable` olarak hesaplanır.
+
+Yerel video:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960
+```
+
+Doğrudan MP4 URL:
+
+```powershell
+python src/track_video.py --source "https://example.com/video.mp4" --conf 0.35 --imgsz 960
+```
+
+Hareket hassasiyeti ve tutulan geçmiş uzunluğu isteğe bağlı olarak
+değiştirilebilir:
+
+```powershell
+python src/track_video.py --source video.mp4 --history-length 30 --direction-threshold 8
+```
+
+Takip çıktıları:
+
+```text
+outputs/videos/<video_adi>_tracked.mp4
+outputs/logs/tracking.csv
+```
+
+Takip CSV kolonları:
+
+```text
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction
+```
+
 ## Proje Yapısı
 
 ```text
@@ -219,7 +260,8 @@ UAV_Object_Detection/
 │   └── yolo11s_4class_960/
 ├── src/
 │   ├── convert_visdrone_4class.py
-│   └── inference_video.py
+│   ├── inference_video.py
+│   └── track_video.py
 ├── data_4class.yaml
 ├── requirements.txt
 └── README.md
@@ -227,10 +269,9 @@ UAV_Object_Detection/
 
 ## Gelecek Çalışmalar
 
-- ByteTrack entegrasyonu
-- Her nesne için kalıcı ID atama ve nesne ID takibi
-- Çoklu nesne takibi
-- Nesne hareket yönü analizi
+- ByteTrack parametrelerinin farklı sahneler için optimize edilmesi
+- Yeniden kimliklendirme ile uzun süreli nesne ID takibi
+- Kamera hareketi telafisi
 - Piksel ve gerçek dünya tabanlı hız tahmini
 - Nesne yörüngelerinin kaydedilmesi
 - Canlı kamera ve RTSP akış desteği
