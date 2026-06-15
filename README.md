@@ -241,7 +241,7 @@ outputs/logs/tracking.csv
 Takip CSV kolonları:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,active_total,active_vehicle,active_person,active_car,active_truck,active_bus,unique_total,unique_vehicle,unique_person,unique_car,unique_truck,unique_bus
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,speed_px_per_sec,active_total,active_vehicle,active_person,active_car,active_truck,active_bus,unique_total,unique_vehicle,unique_person,unique_car,unique_truck,unique_bus
 ```
 
 ## Geliştirilmiş Nesne Sayımı
@@ -303,6 +303,31 @@ FPS: 24.8
 Active ve unique sınıf sayımları her takip satırının sonuna eklenen CSV
 kolonlarında saklanır. Active değerler detection tabanlı, unique değerler
 track ID tabanlıdır.
+
+## Speed Estimation
+
+Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
+tahmini yapılır. İki merkez noktası arasındaki piksel mesafesi, kaynak videonun
+FPS değeri kullanılarak geçen zamana bölünür:
+
+```text
+speed_px_per_sec = pixel_distance / time_difference
+```
+
+Ani koordinat değişimlerinin etkisini azaltmak için son en fazla beş merkez
+noktası arasındaki segment hızlarının ortalaması alınır. En az iki merkez
+noktası bulunmayan kısa track'lerde hız `0.0 px/s` olarak gösterilir.
+
+Video üzerindeki nesne etiketi sınıf, ID, yön ve hızı birlikte gösterir:
+
+```text
+ID 12 | Car 0.87 | right | 42.3 px/s
+```
+
+Hız değeri CSV dosyasındaki `speed_px_per_sec` kolonuna da yazılır. Bu değer
+gerçek dünya hızı veya km/h değildir; kamera perspektifi, irtifa ve ölçek
+kalibrasyonu yapılmadığı için yalnızca görüntü düzlemindeki göreli piksel
+hızıdır.
 
 ## Proje Yapısı
 

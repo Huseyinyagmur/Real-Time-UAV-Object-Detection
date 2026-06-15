@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import math
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ CSV_COLUMNS = (
     "center_x",
     "center_y",
     "direction",
+    "speed_px_per_sec",
     "active_total",
     "active_vehicle",
     "active_person",
@@ -73,6 +75,7 @@ class TrackedObject:
     center_x: int
     center_y: int
     direction: str
+    speed_px_per_sec: float
 
 
 @dataclass(frozen=True)
@@ -198,7 +201,7 @@ class ObjectCounter:
 
 
 class TrackHistory:
-    """Store recent center points and calculate movement directions."""
+    """Store center observations and calculate direction and pixel speed."""
 
     def __init__(
         self,
@@ -209,7 +212,7 @@ class TrackHistory:
         self.history_length = history_length
         self.direction_threshold = direction_threshold
         self.retention_frames = retention_frames
-        self.points: dict[int, deque[tuple[int, int]]] = defaultdict(
+        self.points: dict[int, deque[tuple[int, int, int]]] = defaultdict(
             lambda: deque(maxlen=self.history_length)
         )
         self.last_seen: dict[int, int] = {}
@@ -219,12 +222,16 @@ class TrackHistory:
         track_id: int,
         center: tuple[int, int],
         frame_number: int,
-    ) -> str:
-        """Append a center point and return its current movement direction."""
+        source_fps: float,
+    ) -> tuple[str, float]:
+        """Append a center observation and return direction and smoothed speed."""
         history = self.points[track_id]
-        history.append(center)
+        history.append((frame_number, center[0], center[1]))
         self.last_seen[track_id] = frame_number
-        return self.direction(track_id)
+        return self.direction(track_id), self.speed_px_per_sec(
+            track_id,
+            source_fps,
+        )
 
     def direction(self, track_id: int) -> str:
         """Calculate direction from the oldest to the newest stored center."""
@@ -232,8 +239,8 @@ class TrackHistory:
         if len(history) < 2:
             return "stable"
 
-        start_x, start_y = history[0]
-        end_x, end_y = history[-1]
+        _, start_x, start_y = history[0]
+        _, end_x, end_y = history[-1]
         delta_x = end_x - start_x
         delta_y = end_y - start_y
 
@@ -246,9 +253,34 @@ class TrackHistory:
             return "right" if delta_x > 0 else "left"
         return "down" if delta_y > 0 else "up"
 
+    def speed_px_per_sec(self, track_id: int, source_fps: float) -> float:
+        """Return mean segment speed over the latest five center points."""
+        history = self.points[track_id]
+        recent_points = tuple(history)[-5:]
+        if len(recent_points) < 2 or source_fps <= 0:
+            return 0.0
+
+        segment_speeds: list[float] = []
+        for start, end in zip(recent_points, recent_points[1:]):
+            start_frame, start_x, start_y = start
+            end_frame, end_x, end_y = end
+            frame_difference = end_frame - start_frame
+            if frame_difference <= 0:
+                continue
+
+            pixel_distance = math.hypot(end_x - start_x, end_y - start_y)
+            time_difference = frame_difference / source_fps
+            segment_speeds.append(pixel_distance / time_difference)
+
+        if not segment_speeds:
+            return 0.0
+        return sum(segment_speeds) / len(segment_speeds)
+
     def get_points(self, track_id: int) -> tuple[tuple[int, int], ...]:
         """Return a track's center history for trajectory drawing."""
-        return tuple(self.points.get(track_id, ()))
+        return tuple(
+            (x, y) for _, x, y in self.points.get(track_id, ())
+        )
 
     def prune(self, frame_number: int) -> None:
         """Remove histories that have not appeared for a while."""
@@ -276,6 +308,7 @@ def extract_tracked_objects(
     result: object,
     history: TrackHistory,
     frame_number: int,
+    source_fps: float,
 ) -> list[TrackedObject]:
     """Convert an Ultralytics tracking result to project objects."""
     tracked_objects: list[TrackedObject] = []
@@ -296,10 +329,11 @@ def extract_tracked_objects(
         x1_float, y1_float, x2_float, y2_float = box.xyxy[0].tolist()
         center_x = round((x1_float + x2_float) / 2.0)
         center_y = round((y1_float + y2_float) / 2.0)
-        direction = history.update(
+        direction, speed_px_per_sec = history.update(
             track_id,
             (center_x, center_y),
             frame_number,
+            source_fps,
         )
 
         tracked_objects.append(
@@ -315,6 +349,7 @@ def extract_tracked_objects(
                 center_x=center_x,
                 center_y=center_y,
                 direction=direction,
+                speed_px_per_sec=speed_px_per_sec,
             )
         )
 
@@ -329,8 +364,9 @@ def draw_track(
     """Draw a tracked object, its center, direction, and trajectory."""
     color = CLASS_COLORS[tracked_object.class_id]
     label = (
-        f"{tracked_object.class_name} ID:{tracked_object.track_id} "
-        f"{tracked_object.confidence:.2f} {tracked_object.direction}"
+        f"ID {tracked_object.track_id} | {tracked_object.class_name} "
+        f"{tracked_object.confidence:.2f} | {tracked_object.direction} | "
+        f"{tracked_object.speed_px_per_sec:.1f} px/s"
     )
 
     cv2.rectangle(
@@ -456,6 +492,9 @@ def write_csv_rows(
                 "center_x": tracked_object.center_x,
                 "center_y": tracked_object.center_y,
                 "direction": tracked_object.direction,
+                "speed_px_per_sec": (
+                    f"{tracked_object.speed_px_per_sec:.6f}"
+                ),
                 "active_total": counts.active_total,
                 "active_vehicle": counts.active_vehicle,
                 "active_person": counts.active_person,
@@ -551,6 +590,7 @@ def process_video(
                         results[0],
                         history,
                         processed_frames,
+                        source_fps,
                     )
                     tracked_observations += len(tracked_objects)
                     counts = counter.update(results[0], tracked_objects)
