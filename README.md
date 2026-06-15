@@ -215,7 +215,7 @@ geçmiş merkez noktaları tutulur, yörünge çizilir ve hareket yönü `left`,
 Yerel video:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960 --count-conf 0.50 --min-track-frames 5
 ```
 
 Doğrudan MP4 URL:
@@ -241,19 +241,37 @@ outputs/logs/tracking.csv
 Takip CSV kolonları:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,total_count,person_count,car_count,truck_count,bus_count,active_tracks
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,total_count,vehicle_count,person_count,car_count,truck_count,bus_count,active_tracks
 ```
 
-## Nesne Sayımı
+## Geliştirilmiş Nesne Sayımı
 
 Nesne sayımı frame içindeki detection sayısına göre değil, ByteTrack tarafından
 atanan benzersiz `track_id` değerlerine göre yapılır. Bir ID video boyunca
-yalnızca ilk görüldüğü anda sayılır ve ilk görülen sınıfına eklenir.
+yalnızca bir kez sayılır.
+
+Yanlış pozitif ve kısa süreli track kaynaklı aşırı sayımı azaltmak için iki
+filtre uygulanır:
+
+- Bir track varsayılan olarak en az 5 frame görülmeden sayılmaz.
+- Person, car ve bus için varsayılan minimum sayım güveni `0.50` değeridir.
+- Truck sınıfı için daha sıkı, sabit `0.60` minimum güven eşiği kullanılır.
+
+Filtreler komut satırından değiştirilebilir:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960 --count-conf 0.50 --min-track-frames 5
+```
+
+`--conf`, YOLO ve ByteTrack pipeline'ına girecek detection eşiğini;
+`--count-conf` ise oluşan track'lerin kümülatif sayıma dahil edilme eşiğini
+kontrol eder. Truck sayım eşiği her zaman `0.60` değeridir.
 
 Video üzerinde aşağıdaki bilgiler gerçek zamanlı gösterilir:
 
 ```text
 Total: 32
+Vehicle: 27
 Person: 5
 Car: 21
 Truck: 4
@@ -262,10 +280,11 @@ Active Tracks: 12
 FPS: 24.8
 ```
 
-`Total`, `Person`, `Car`, `Truck` ve `Bus` değerleri video boyunca kümülatif
-benzersiz nesne sayılarını gösterir. `Active Tracks` yalnızca mevcut frame'de
-görülen ve geçerli bir ID taşıyan nesnelerin sayısıdır. Aynı değerler her
-tespit satırının sonuna eklenen CSV kolonlarında da saklanır.
+`Total`, `Vehicle`, `Person`, `Car`, `Truck` ve `Bus` değerleri video boyunca
+kümülatif benzersiz nesne sayılarını gösterir. `Vehicle`, car + truck + bus
+toplamıdır. `Active Tracks` yalnızca mevcut frame'de görülen ve geçerli bir ID
+taşıyan nesnelerin sayısıdır; sayım filtrelerinden etkilenmez. Aynı değerler
+her tespit satırının sonuna eklenen CSV kolonlarında da saklanır.
 
 ## Proje Yapısı
 

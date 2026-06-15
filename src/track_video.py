@@ -44,6 +44,7 @@ CSV_COLUMNS = (
     "center_y",
     "direction",
     "total_count",
+    "vehicle_count",
     "person_count",
     "car_count",
     "truck_count",
@@ -74,6 +75,7 @@ class CountSnapshot:
     """Cumulative unique-object counts and current active track count."""
 
     total_count: int
+    vehicle_count: int
     person_count: int
     car_count: int
     truck_count: int
@@ -82,26 +84,57 @@ class CountSnapshot:
 
 
 class ObjectCounter:
-    """Count every ByteTrack ID once using its first observed class."""
+    """Count stable, confident ByteTrack IDs only once."""
 
-    def __init__(self) -> None:
-        self.seen_tracks: dict[int, int] = {}
+    TRUCK_CLASS_ID = 2
+    TRUCK_CONFIDENCE = 0.60
+
+    def __init__(
+        self,
+        count_confidence: float = 0.50,
+        min_track_frames: int = 5,
+    ) -> None:
+        self.count_confidence = count_confidence
+        self.min_track_frames = min_track_frames
+        self.track_frames: dict[int, int] = defaultdict(int)
+        self.counted_tracks: dict[int, int] = {}
         self.class_counts = {class_id: 0 for class_id in CLASS_NAMES}
 
     def update(self, tracked_objects: list[TrackedObject]) -> CountSnapshot:
-        """Register new IDs and return counts for the current frame."""
+        """Update track ages and count IDs that satisfy all filters."""
         active_track_ids: set[int] = set()
 
         for tracked_object in tracked_objects:
-            active_track_ids.add(tracked_object.track_id)
-            if tracked_object.track_id in self.seen_tracks:
+            track_id = tracked_object.track_id
+            if track_id in active_track_ids:
                 continue
 
-            self.seen_tracks[tracked_object.track_id] = tracked_object.class_id
+            active_track_ids.add(track_id)
+            self.track_frames[track_id] += 1
+            if track_id in self.counted_tracks:
+                continue
+            if self.track_frames[track_id] < self.min_track_frames:
+                continue
+
+            confidence_threshold = (
+                self.TRUCK_CONFIDENCE
+                if tracked_object.class_id == self.TRUCK_CLASS_ID
+                else self.count_confidence
+            )
+            if tracked_object.confidence < confidence_threshold:
+                continue
+
+            self.counted_tracks[track_id] = tracked_object.class_id
             self.class_counts[tracked_object.class_id] += 1
 
+        vehicle_count = (
+            self.class_counts[1]
+            + self.class_counts[2]
+            + self.class_counts[3]
+        )
         return CountSnapshot(
-            total_count=len(self.seen_tracks),
+            total_count=len(self.counted_tracks),
+            vehicle_count=vehicle_count,
             person_count=self.class_counts[0],
             car_count=self.class_counts[1],
             truck_count=self.class_counts[2],
@@ -299,6 +332,7 @@ def draw_statistics(
     """Draw cumulative counts, active tracks, and FPS on a frame."""
     lines = (
         f"Total: {counts.total_count}",
+        f"Vehicle: {counts.vehicle_count}",
         f"Person: {counts.person_count}",
         f"Car: {counts.car_count}",
         f"Truck: {counts.truck_count}",
@@ -364,6 +398,7 @@ def write_csv_rows(
                 "center_y": tracked_object.center_y,
                 "direction": tracked_object.direction,
                 "total_count": counts.total_count,
+                "vehicle_count": counts.vehicle_count,
                 "person_count": counts.person_count,
                 "car_count": counts.car_count,
                 "truck_count": counts.truck_count,
@@ -380,6 +415,8 @@ def process_video(
     image_size: int,
     history_length: int,
     direction_threshold: int,
+    count_confidence: float,
+    min_track_frames: int,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
     model_path = validate_file(model_path, "Model")
@@ -402,7 +439,10 @@ def process_video(
             history_length=history_length,
             direction_threshold=direction_threshold,
         )
-        counter = ObjectCounter()
+        counter = ObjectCounter(
+            count_confidence=count_confidence,
+            min_track_frames=min_track_frames,
+        )
         processed_frames = 0
         tracked_observations = 0
 
@@ -528,6 +568,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=8,
         help="Maximum pixel displacement considered stable (default: 8).",
     )
+    parser.add_argument(
+        "--count-conf",
+        type=float,
+        default=0.50,
+        help=(
+            "Minimum confidence for counting non-truck tracks "
+            "(default: 0.50)."
+        ),
+    )
+    parser.add_argument(
+        "--min-track-frames",
+        type=int,
+        default=5,
+        help="Frames required before a track can be counted (default: 5).",
+    )
     return parser
 
 
@@ -548,6 +603,12 @@ def main() -> int:
     if args.direction_threshold < 0:
         LOGGER.error("--direction-threshold cannot be negative.")
         return 2
+    if not 0.0 <= args.count_conf <= 1.0:
+        LOGGER.error("--count-conf must be between 0 and 1.")
+        return 2
+    if args.min_track_frames < 1:
+        LOGGER.error("--min-track-frames must be at least 1.")
+        return 2
 
     try:
         output_video, csv_path, frames, observations = process_video(
@@ -557,6 +618,8 @@ def main() -> int:
             image_size=args.imgsz,
             history_length=args.history_length,
             direction_threshold=args.direction_threshold,
+            count_confidence=args.count_conf,
+            min_track_frames=args.min_track_frames,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
