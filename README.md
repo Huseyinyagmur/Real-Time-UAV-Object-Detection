@@ -18,6 +18,7 @@ seçilmiştir.
 - Tespit sonuçlarının frame bazında CSV dosyasına yazılması
 - Yerel video dosyası ve doğrudan HTTP(S) video URL desteği
 - Track geçmişi, hareket yönü ve yörünge çizimi
+- Benzersiz `track_id` değerlerine göre toplam ve sınıf bazlı nesne sayımı
 - Model karşılaştırma grafikleri ve doğrulama görselleri
 
 ## Kullanılan Teknolojiler
@@ -240,8 +241,31 @@ outputs/logs/tracking.csv
 Takip CSV kolonları:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,total_count,person_count,car_count,truck_count,bus_count,active_tracks
 ```
+
+## Nesne Sayımı
+
+Nesne sayımı frame içindeki detection sayısına göre değil, ByteTrack tarafından
+atanan benzersiz `track_id` değerlerine göre yapılır. Bir ID video boyunca
+yalnızca ilk görüldüğü anda sayılır ve ilk görülen sınıfına eklenir.
+
+Video üzerinde aşağıdaki bilgiler gerçek zamanlı gösterilir:
+
+```text
+Total: 32
+Person: 5
+Car: 21
+Truck: 4
+Bus: 2
+Active Tracks: 12
+FPS: 24.8
+```
+
+`Total`, `Person`, `Car`, `Truck` ve `Bus` değerleri video boyunca kümülatif
+benzersiz nesne sayılarını gösterir. `Active Tracks` yalnızca mevcut frame'de
+görülen ve geçerli bir ID taşıyan nesnelerin sayısıdır. Aynı değerler her
+tespit satırının sonuna eklenen CSV kolonlarında da saklanır.
 
 ## Proje Yapısı
 

@@ -20,7 +20,6 @@ from inference_video import (
     DEFAULT_VIDEO_DIR,
     InferenceError,
     create_video_writer,
-    draw_fps,
     get_video_properties,
     open_video,
     prepare_source,
@@ -44,6 +43,12 @@ CSV_COLUMNS = (
     "center_x",
     "center_y",
     "direction",
+    "total_count",
+    "person_count",
+    "car_count",
+    "truck_count",
+    "bus_count",
+    "active_tracks",
 )
 
 
@@ -62,6 +67,47 @@ class TrackedObject:
     center_x: int
     center_y: int
     direction: str
+
+
+@dataclass(frozen=True)
+class CountSnapshot:
+    """Cumulative unique-object counts and current active track count."""
+
+    total_count: int
+    person_count: int
+    car_count: int
+    truck_count: int
+    bus_count: int
+    active_tracks: int
+
+
+class ObjectCounter:
+    """Count every ByteTrack ID once using its first observed class."""
+
+    def __init__(self) -> None:
+        self.seen_tracks: dict[int, int] = {}
+        self.class_counts = {class_id: 0 for class_id in CLASS_NAMES}
+
+    def update(self, tracked_objects: list[TrackedObject]) -> CountSnapshot:
+        """Register new IDs and return counts for the current frame."""
+        active_track_ids: set[int] = set()
+
+        for tracked_object in tracked_objects:
+            active_track_ids.add(tracked_object.track_id)
+            if tracked_object.track_id in self.seen_tracks:
+                continue
+
+            self.seen_tracks[tracked_object.track_id] = tracked_object.class_id
+            self.class_counts[tracked_object.class_id] += 1
+
+        return CountSnapshot(
+            total_count=len(self.seen_tracks),
+            person_count=self.class_counts[0],
+            car_count=self.class_counts[1],
+            truck_count=self.class_counts[2],
+            bus_count=self.class_counts[3],
+            active_tracks=len(active_track_ids),
+        )
 
 
 class TrackHistory:
@@ -245,10 +291,62 @@ def draw_track(
     )
 
 
+def draw_statistics(
+    frame: object,
+    counts: CountSnapshot,
+    fps: float,
+) -> None:
+    """Draw cumulative counts, active tracks, and FPS on a frame."""
+    lines = (
+        f"Total: {counts.total_count}",
+        f"Person: {counts.person_count}",
+        f"Car: {counts.car_count}",
+        f"Truck: {counts.truck_count}",
+        f"Bus: {counts.bus_count}",
+        f"Active Tracks: {counts.active_tracks}",
+        f"FPS: {fps:.1f}",
+    )
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.65
+    thickness = 2
+    line_height = 27
+    padding = 10
+    text_width = max(
+        cv2.getTextSize(line, font, font_scale, thickness)[0][0]
+        for line in lines
+    )
+    panel_width = text_width + (padding * 2)
+    panel_height = (len(lines) * line_height) + padding
+
+    overlay = frame.copy()
+    cv2.rectangle(
+        overlay,
+        (10, 10),
+        (10 + panel_width, 10 + panel_height),
+        (0, 0, 0),
+        -1,
+    )
+    cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+
+    for index, line in enumerate(lines):
+        color = (0, 255, 255) if line.startswith("FPS") else (255, 255, 255)
+        cv2.putText(
+            frame,
+            line,
+            (10 + padding, 10 + padding + ((index + 1) * line_height) - 7),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
+
+
 def write_csv_rows(
     csv_writer: csv.DictWriter,
     frame_number: int,
     tracked_objects: list[TrackedObject],
+    counts: CountSnapshot,
 ) -> None:
     """Write tracked objects from one frame to the CSV log."""
     for tracked_object in tracked_objects:
@@ -265,6 +363,12 @@ def write_csv_rows(
                 "center_x": tracked_object.center_x,
                 "center_y": tracked_object.center_y,
                 "direction": tracked_object.direction,
+                "total_count": counts.total_count,
+                "person_count": counts.person_count,
+                "car_count": counts.car_count,
+                "truck_count": counts.truck_count,
+                "bus_count": counts.bus_count,
+                "active_tracks": counts.active_tracks,
             }
         )
 
@@ -298,6 +402,7 @@ def process_video(
             history_length=history_length,
             direction_threshold=direction_threshold,
         )
+        counter = ObjectCounter()
         processed_frames = 0
         tracked_observations = 0
 
@@ -344,6 +449,7 @@ def process_video(
                         processed_frames,
                     )
                     tracked_observations += len(tracked_objects)
+                    counts = counter.update(tracked_objects)
 
                     for tracked_object in tracked_objects:
                         draw_track(frame, tracked_object, history)
@@ -351,12 +457,13 @@ def process_video(
                         csv_writer,
                         processed_frames,
                         tracked_objects,
+                        counts,
                     )
                     history.prune(processed_frames)
 
                     elapsed = time.perf_counter() - frame_started_at
                     instantaneous_fps = 1.0 / elapsed if elapsed > 0 else 0.0
-                    draw_fps(frame, instantaneous_fps)
+                    draw_statistics(frame, counts, instantaneous_fps)
                     writer.write(frame)
 
                     if processed_frames % 100 == 0:
