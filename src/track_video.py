@@ -93,27 +93,64 @@ class CountSnapshot:
     unique_bus: int
 
 
-class ObjectCounter:
-    """Count stable, confident ByteTrack IDs only once."""
+@dataclass(frozen=True)
+class ClassConfidenceThresholds:
+    """Per-class confidence thresholds used by the counting system."""
 
-    TRUCK_CLASS_ID = 2
-    TRUCK_CONFIDENCE = 0.60
+    person: float = 0.25
+    car: float = 0.35
+    truck: float = 0.55
+    bus: float = 0.40
+
+    def for_class(self, class_id: int) -> float:
+        """Return the configured threshold for a model class ID."""
+        return {
+            0: self.person,
+            1: self.car,
+            2: self.truck,
+            3: self.bus,
+        }[class_id]
+
+
+class ObjectCounter:
+    """Count frame detections actively and stable track IDs cumulatively."""
 
     def __init__(
         self,
-        count_confidence: float = 0.50,
+        thresholds: ClassConfidenceThresholds,
         min_track_frames: int = 5,
     ) -> None:
-        self.count_confidence = count_confidence
+        self.thresholds = thresholds
         self.min_track_frames = min_track_frames
         self.track_frames: dict[int, int] = defaultdict(int)
         self.counted_tracks: dict[int, int] = {}
         self.class_counts = {class_id: 0 for class_id in CLASS_NAMES}
 
-    def update(self, tracked_objects: list[TrackedObject]) -> CountSnapshot:
-        """Update track ages and calculate active and unique filtered counts."""
-        observed_track_ids: set[int] = set()
+    def count_active_detections(self, result: object) -> dict[int, int]:
+        """Count all current-frame detections that pass class thresholds."""
         active_class_counts = {class_id: 0 for class_id in CLASS_NAMES}
+        boxes = getattr(result, "boxes", None)
+        if boxes is None:
+            return active_class_counts
+
+        for box in boxes:
+            class_id = int(box.cls.item())
+            if class_id not in CLASS_NAMES:
+                continue
+            confidence = float(box.conf.item())
+            if confidence >= self.thresholds.for_class(class_id):
+                active_class_counts[class_id] += 1
+
+        return active_class_counts
+
+    def update(
+        self,
+        result: object,
+        tracked_objects: list[TrackedObject],
+    ) -> CountSnapshot:
+        """Calculate detection-based active and track-based unique counts."""
+        active_class_counts = self.count_active_detections(result)
+        observed_track_ids: set[int] = set()
 
         for tracked_object in tracked_objects:
             track_id = tracked_object.track_id
@@ -124,16 +161,12 @@ class ObjectCounter:
             self.track_frames[track_id] += 1
             if self.track_frames[track_id] < self.min_track_frames:
                 continue
-
-            confidence_threshold = (
-                self.TRUCK_CONFIDENCE
-                if tracked_object.class_id == self.TRUCK_CLASS_ID
-                else self.count_confidence
-            )
-            if tracked_object.confidence < confidence_threshold:
+            if (
+                tracked_object.confidence
+                < self.thresholds.for_class(tracked_object.class_id)
+            ):
                 continue
 
-            active_class_counts[tracked_object.class_id] += 1
             if track_id not in self.counted_tracks:
                 self.counted_tracks[track_id] = tracked_object.class_id
                 self.class_counts[tracked_object.class_id] += 1
@@ -358,7 +391,7 @@ def draw_statistics(
         f"Active Car: {counts.active_car}",
         f"Active Truck: {counts.active_truck}",
         f"Active Bus: {counts.active_bus}",
-        f"Unique Total: {counts.unique_total}",
+        f"Unique Tracks: {counts.unique_total}",
         f"FPS: {fps:.1f}",
     )
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -446,7 +479,7 @@ def process_video(
     image_size: int,
     history_length: int,
     direction_threshold: int,
-    count_confidence: float,
+    thresholds: ClassConfidenceThresholds,
     min_track_frames: int,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
@@ -471,7 +504,7 @@ def process_video(
             direction_threshold=direction_threshold,
         )
         counter = ObjectCounter(
-            count_confidence=count_confidence,
+            thresholds=thresholds,
             min_track_frames=min_track_frames,
         )
         processed_frames = 0
@@ -520,7 +553,7 @@ def process_video(
                         processed_frames,
                     )
                     tracked_observations += len(tracked_objects)
-                    counts = counter.update(tracked_objects)
+                    counts = counter.update(results[0], tracked_objects)
 
                     for tracked_object in tracked_objects:
                         draw_track(frame, tracked_object, history)
@@ -600,13 +633,28 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Maximum pixel displacement considered stable (default: 8).",
     )
     parser.add_argument(
-        "--count-conf",
+        "--person-conf",
         type=float,
-        default=0.50,
-        help=(
-            "Minimum confidence for counting non-truck tracks "
-            "(default: 0.50)."
-        ),
+        default=0.25,
+        help="Person counting confidence threshold (default: 0.25).",
+    )
+    parser.add_argument(
+        "--car-conf",
+        type=float,
+        default=0.35,
+        help="Car counting confidence threshold (default: 0.35).",
+    )
+    parser.add_argument(
+        "--truck-conf",
+        type=float,
+        default=0.55,
+        help="Truck counting confidence threshold (default: 0.55).",
+    )
+    parser.add_argument(
+        "--bus-conf",
+        type=float,
+        default=0.40,
+        help="Bus counting confidence threshold (default: 0.40).",
     )
     parser.add_argument(
         "--min-track-frames",
@@ -634,12 +682,27 @@ def main() -> int:
     if args.direction_threshold < 0:
         LOGGER.error("--direction-threshold cannot be negative.")
         return 2
-    if not 0.0 <= args.count_conf <= 1.0:
-        LOGGER.error("--count-conf must be between 0 and 1.")
-        return 2
+    class_thresholds = {
+        "--person-conf": args.person_conf,
+        "--car-conf": args.car_conf,
+        "--truck-conf": args.truck_conf,
+        "--bus-conf": args.bus_conf,
+    }
+    for argument, threshold in class_thresholds.items():
+        if not 0.0 <= threshold <= 1.0:
+            LOGGER.error("%s must be between 0 and 1.", argument)
+            return 2
     if args.min_track_frames < 1:
         LOGGER.error("--min-track-frames must be at least 1.")
         return 2
+    minimum_class_confidence = min(class_thresholds.values())
+    if args.conf > minimum_class_confidence:
+        LOGGER.warning(
+            "--conf %.2f is higher than the lowest class threshold %.2f; "
+            "some detections may be discarded before class-based counting.",
+            args.conf,
+            minimum_class_confidence,
+        )
 
     try:
         output_video, csv_path, frames, observations = process_video(
@@ -649,7 +712,12 @@ def main() -> int:
             image_size=args.imgsz,
             history_length=args.history_length,
             direction_threshold=args.direction_threshold,
-            count_confidence=args.count_conf,
+            thresholds=ClassConfidenceThresholds(
+                person=args.person_conf,
+                car=args.car_conf,
+                truck=args.truck_conf,
+                bus=args.bus_conf,
+            ),
             min_track_frames=args.min_track_frames,
         )
     except InferenceError as exc:

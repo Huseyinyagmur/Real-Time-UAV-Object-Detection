@@ -215,7 +215,7 @@ geçmiş merkez noktaları tutulur, yörünge çizilir ve hareket yönü `left`,
 Yerel video:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960 --count-conf 0.50 --min-track-frames 5
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960
 ```
 
 Doğrudan MP4 URL:
@@ -248,9 +248,10 @@ frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,active_t
 
 Takip sistemi aktif ve benzersiz olmak üzere iki farklı sayım üretir.
 
-**Active count**, mevcut frame'de görünen, minimum track ömrünü tamamlayan ve
-confidence filtresini geçen nesneleri gösterir. Ekrandaki ana sayaçlar active
-count değerleridir:
+**Active count**, mevcut frame'de YOLO tarafından tespit edilen ve sınıfına
+ait confidence eşiğini geçen detection sayısıdır. Track ID veya minimum track
+ömrü şartı kullanmaz. Bu nedenle ekranda görünen mevcut nesne yoğunluğunu
+temsil eder. Ekrandaki ana sayaçlar active count değerleridir:
 
 - `active_person`
 - `active_car`
@@ -259,31 +260,32 @@ count değerleridir:
 - `active_vehicle = active_car + active_truck + active_bus`
 - `active_total`
 
-**Unique count**, video boyunca sayım filtrelerini geçen benzersiz `track_id`
-değerlerini kümülatif olarak tutar. Sınıf bazlı `unique_*` değerlerinin tamamı
-CSV dosyasına yazılır; ekranda ikincil bilgi olarak yalnızca `Unique Total`
-gösterilir.
+**Unique count**, video boyunca oluşan benzersiz `track_id` değerlerini
+kümülatif olarak tutar. Minimum track ömrü filtresi yalnızca bu sayımda
+kullanılır. Sınıf bazlı `unique_*` değerlerinin tamamı CSV dosyasına yazılır;
+ekranda ikincil bilgi olarak `Unique Tracks` gösterilir.
 
 ByteTrack bir nesneyi kaybedip daha sonra aynı nesneye yeni bir ID atarsa,
 unique count artabilir. Bu değer fiziksel nesnelerin kusursuz yeniden
 kimliklendirilmesi değil, benzersiz ve filtrelenmiş track ID sayısıdır.
 
-Yanlış pozitif ve kısa süreli track kaynaklı aşırı sayımı azaltmak için iki
-filtre uygulanır:
+Active detection sayımı için varsayılan sınıf eşikleri:
 
-- Bir track varsayılan olarak en az 5 frame görülmeden sayılmaz.
-- Person, car ve bus için varsayılan minimum sayım güveni `0.50` değeridir.
-- Truck sınıfı için daha sıkı, sabit `0.60` minimum güven eşiği kullanılır.
+- Person: `0.25`
+- Car: `0.35`
+- Truck: `0.55`
+- Bus: `0.40`
 
-Filtreler komut satırından değiştirilebilir:
+Bu eşikler `--person-conf`, `--car-conf`, `--truck-conf` ve `--bus-conf`
+parametreleriyle değiştirilebilir:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960 --count-conf 0.50 --min-track-frames 5
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960 --person-conf 0.25 --car-conf 0.35 --truck-conf 0.55 --bus-conf 0.40
 ```
 
-`--conf`, YOLO ve ByteTrack pipeline'ına girecek detection eşiğini;
-`--count-conf` ise oluşan track'lerin kümülatif sayıma dahil edilme eşiğini
-kontrol eder. Truck sayım eşiği her zaman `0.60` değeridir.
+Genel `--conf` değeri modelin counting aşamasına ulaşacak detection'larını
+belirler. Bu değer person eşiğinden yüksek seçilirse düşük confidence değerine
+sahip kişiler sınıf bazlı sayımdan önce elenebilir.
 
 Video üzerinde aşağıdaki bilgiler gerçek zamanlı gösterilir:
 
@@ -294,13 +296,13 @@ Active Person: 5
 Active Car: 21
 Active Truck: 4
 Active Bus: 2
-Unique Total: 46
+Unique Tracks: 46
 FPS: 24.8
 ```
 
 Active ve unique sınıf sayımları her takip satırının sonuna eklenen CSV
-kolonlarında saklanır. Minimum track frame filtresi, genel count confidence
-filtresi ve truck için `0.60` confidence eşiği iki sayım türünde de korunur.
+kolonlarında saklanır. Active değerler detection tabanlı, unique değerler
+track ID tabanlıdır.
 
 ## Proje Yapısı
 
