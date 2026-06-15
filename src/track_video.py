@@ -203,14 +203,14 @@ class ObjectCounter:
 class TrackHistory:
     """Store center observations and calculate direction and pixel speed."""
 
-    SPEED_WINDOW = 8
-    SMOOTHING_WINDOW = 3
+    SPEED_WINDOW = 10
+    SMOOTHING_WINDOW = 2
 
     def __init__(
         self,
         history_length: int = 30,
         direction_threshold: int = 8,
-        speed_threshold: float = 5.0,
+        speed_threshold: float = 2.0,
         retention_frames: int = 300,
     ) -> None:
         self.history_length = history_length
@@ -251,21 +251,9 @@ class TrackHistory:
         return self.motion(track_id, source_fps)
 
     def motion(self, track_id: int, source_fps: float) -> tuple[str, float]:
-        """Return direction and windowed speed from smoothed center points."""
+        """Return direction and displacement speed over ten smoothed points."""
         recent_points = tuple(self.points[track_id])[-self.SPEED_WINDOW :]
         if len(recent_points) < self.SPEED_WINDOW or source_fps <= 0:
-            return "stable", 0.0
-
-        segment_distances: list[float] = []
-        for start, end in zip(recent_points, recent_points[1:]):
-            _, start_x, start_y = start
-            _, end_x, end_y = end
-            segment_distances.append(
-                math.hypot(end_x - start_x, end_y - start_y)
-            )
-
-        average_movement = sum(segment_distances) / len(segment_distances)
-        if average_movement < self.speed_threshold:
             return "stable", 0.0
 
         start_frame, start_x, start_y = recent_points[0]
@@ -276,15 +264,12 @@ class TrackHistory:
 
         delta_x = end_x - start_x
         delta_y = end_y - start_y
-        if (
-            abs(delta_x) <= self.direction_threshold
-            and abs(delta_y) <= self.direction_threshold
-        ):
+        displacement = math.hypot(delta_x, delta_y)
+        if displacement < self.speed_threshold:
             return "stable", 0.0
 
-        total_distance = sum(segment_distances)
         time_difference = frame_difference / source_fps
-        speed_px_per_sec = total_distance / time_difference
+        speed_px_per_sec = displacement / time_difference
         if abs(delta_x) >= abs(delta_y):
             direction = "right" if delta_x > 0 else "left"
         else:
@@ -693,10 +678,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speed-threshold",
         type=float,
-        default=5.0,
+        default=2.0,
         help=(
-            "Average pixel movement below which speed is zero "
-            "(default: 5)."
+            "Window displacement below which speed is zero "
+            "(default: 2)."
         ),
     )
     parser.add_argument(

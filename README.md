@@ -215,7 +215,7 @@ geçmiş merkez noktaları tutulur, yörünge çizilir ve hareket yönü `left`,
 Yerel video:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
 
 Doğrudan MP4 URL:
@@ -308,25 +308,30 @@ track ID tabanlıdır.
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
 tahmini yapılır. Bounding box titreşimini azaltmak için merkez koordinatlarına
-üç noktalık moving average uygulanır.
+iki noktalık moving average uygulanır. Küçük pencere hareketi yumuşatırken
+gerçek hareketin gecikmesini sınırlı tutar.
 
-Hız hesabı bir frame farkına göre yapılmaz. Track en az sekiz merkez gözlemine
-ulaştığında son sekiz yumuşatılmış noktanın toplam piksel yolu, pencerenin
-toplam süresine bölünür:
+Hız hesabı tek bir frame farkına göre yapılmaz. Track en az 10 merkez gözlemine
+ulaştığında son 10 yumuşatılmış noktanın ilk ve son merkezi arasındaki Öklid
+yer değiştirmesi hesaplanır. Gerçek frame numarası farkı kaynak video FPS
+değerine bölünerek pencerenin süresi bulunur:
 
 ```text
+pixel_distance = distance(first_center, last_center)
+time_difference = frame_difference / fps
 speed_px_per_sec = pixel_distance / time_difference
 ```
 
-Son sekiz nokta arasındaki ortalama hareket varsayılan olarak 5 pikselden
-küçükse nesne `stable` kabul edilir ve hız `0.0 px/s` olarak yazılır. Eşik
-komut satırından değiştirilebilir:
+İlk ve son merkez arasındaki yer değiştirme varsayılan olarak 2 pikselden
+küçükse nesne `stable` kabul edilir ve hız `0.0 px/s` olarak yazılır.
+Yer değiştirme eşik veya üzerindeyse yön ve hız birlikte hesaplanır; yön
+sonucu hızı ayrıca sıfırlamaz. Eşik komut satırından değiştirilebilir:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960 --speed-threshold 5
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
 
-Sekiz gözlemden kısa track'lerde de hız `0.0 px/s` olarak gösterilir.
+10 gözlemden kısa track'lerde hız `0.0 px/s` olarak gösterilir.
 
 Video üzerindeki nesne etiketi sınıf, ID, yön ve hızı birlikte gösterir:
 
