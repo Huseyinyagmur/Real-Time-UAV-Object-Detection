@@ -72,6 +72,19 @@ Dört sınıflı dönüştürme scripti:
 src/convert_visdrone_4class.py
 ```
 
+Person ve tüm motorlu araçları tek bir `vehicle` sınıfında birleştiren iki
+sınıflı dataset sürümü de eklenmiştir:
+
+```text
+src/convert_visdrone_2class.py
+data_2class.yaml
+dataset/yolo_2class/
+```
+
+Bu sürümde `pedestrian` ve `people` sınıfları `person`; `car`, `van`, `truck`,
+`bus` ve `motor` sınıfları `vehicle` olarak eşlenir. Bicycle, tricycle ve
+awning-tricycle sınıfları dahil edilmez.
+
 ## Model Karşılaştırma Sonuçları
 
 | Model | Epoch | Giriş boyutu | Precision | Recall | mAP50 | mAP50-95 |
@@ -363,9 +376,11 @@ UAV_Object_Detection/
 │   └── yolo11s_4class_960/
 ├── src/
 │   ├── convert_visdrone_4class.py
+│   ├── convert_visdrone_2class.py
 │   ├── inference_video.py
 │   └── track_video.py
 ├── data_4class.yaml
+├── data_2class.yaml
 ├── requirements.txt
 └── README.md
 ```

@@ -6,6 +6,7 @@ dataset/raw/
 
 dataset/yolo/
 dataset/yolo_4class/
+dataset/yolo_2class/
 
 models/*
 !models/.gitkeep
