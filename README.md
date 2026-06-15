@@ -241,14 +241,32 @@ outputs/logs/tracking.csv
 Takip CSV kolonları:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,total_count,vehicle_count,person_count,car_count,truck_count,bus_count,active_tracks
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,active_total,active_vehicle,active_person,active_car,active_truck,active_bus,unique_total,unique_vehicle,unique_person,unique_car,unique_truck,unique_bus
 ```
 
 ## Geliştirilmiş Nesne Sayımı
 
-Nesne sayımı frame içindeki detection sayısına göre değil, ByteTrack tarafından
-atanan benzersiz `track_id` değerlerine göre yapılır. Bir ID video boyunca
-yalnızca bir kez sayılır.
+Takip sistemi aktif ve benzersiz olmak üzere iki farklı sayım üretir.
+
+**Active count**, mevcut frame'de görünen, minimum track ömrünü tamamlayan ve
+confidence filtresini geçen nesneleri gösterir. Ekrandaki ana sayaçlar active
+count değerleridir:
+
+- `active_person`
+- `active_car`
+- `active_truck`
+- `active_bus`
+- `active_vehicle = active_car + active_truck + active_bus`
+- `active_total`
+
+**Unique count**, video boyunca sayım filtrelerini geçen benzersiz `track_id`
+değerlerini kümülatif olarak tutar. Sınıf bazlı `unique_*` değerlerinin tamamı
+CSV dosyasına yazılır; ekranda ikincil bilgi olarak yalnızca `Unique Total`
+gösterilir.
+
+ByteTrack bir nesneyi kaybedip daha sonra aynı nesneye yeni bir ID atarsa,
+unique count artabilir. Bu değer fiziksel nesnelerin kusursuz yeniden
+kimliklendirilmesi değil, benzersiz ve filtrelenmiş track ID sayısıdır.
 
 Yanlış pozitif ve kısa süreli track kaynaklı aşırı sayımı azaltmak için iki
 filtre uygulanır:
@@ -270,21 +288,19 @@ kontrol eder. Truck sayım eşiği her zaman `0.60` değeridir.
 Video üzerinde aşağıdaki bilgiler gerçek zamanlı gösterilir:
 
 ```text
-Total: 32
-Vehicle: 27
-Person: 5
-Car: 21
-Truck: 4
-Bus: 2
-Active Tracks: 12
+Active Total: 32
+Active Vehicle: 27
+Active Person: 5
+Active Car: 21
+Active Truck: 4
+Active Bus: 2
+Unique Total: 46
 FPS: 24.8
 ```
 
-`Total`, `Vehicle`, `Person`, `Car`, `Truck` ve `Bus` değerleri video boyunca
-kümülatif benzersiz nesne sayılarını gösterir. `Vehicle`, car + truck + bus
-toplamıdır. `Active Tracks` yalnızca mevcut frame'de görülen ve geçerli bir ID
-taşıyan nesnelerin sayısıdır; sayım filtrelerinden etkilenmez. Aynı değerler
-her tespit satırının sonuna eklenen CSV kolonlarında da saklanır.
+Active ve unique sınıf sayımları her takip satırının sonuna eklenen CSV
+kolonlarında saklanır. Minimum track frame filtresi, genel count confidence
+filtresi ve truck için `0.60` confidence eşiği iki sayım türünde de korunur.
 
 ## Proje Yapısı
 

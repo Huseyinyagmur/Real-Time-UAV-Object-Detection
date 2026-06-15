@@ -43,13 +43,18 @@ CSV_COLUMNS = (
     "center_x",
     "center_y",
     "direction",
-    "total_count",
-    "vehicle_count",
-    "person_count",
-    "car_count",
-    "truck_count",
-    "bus_count",
-    "active_tracks",
+    "active_total",
+    "active_vehicle",
+    "active_person",
+    "active_car",
+    "active_truck",
+    "active_bus",
+    "unique_total",
+    "unique_vehicle",
+    "unique_person",
+    "unique_car",
+    "unique_truck",
+    "unique_bus",
 )
 
 
@@ -72,15 +77,20 @@ class TrackedObject:
 
 @dataclass(frozen=True)
 class CountSnapshot:
-    """Cumulative unique-object counts and current active track count."""
+    """Filtered per-frame active counts and cumulative unique ID counts."""
 
-    total_count: int
-    vehicle_count: int
-    person_count: int
-    car_count: int
-    truck_count: int
-    bus_count: int
-    active_tracks: int
+    active_total: int
+    active_vehicle: int
+    active_person: int
+    active_car: int
+    active_truck: int
+    active_bus: int
+    unique_total: int
+    unique_vehicle: int
+    unique_person: int
+    unique_car: int
+    unique_truck: int
+    unique_bus: int
 
 
 class ObjectCounter:
@@ -101,18 +111,17 @@ class ObjectCounter:
         self.class_counts = {class_id: 0 for class_id in CLASS_NAMES}
 
     def update(self, tracked_objects: list[TrackedObject]) -> CountSnapshot:
-        """Update track ages and count IDs that satisfy all filters."""
-        active_track_ids: set[int] = set()
+        """Update track ages and calculate active and unique filtered counts."""
+        observed_track_ids: set[int] = set()
+        active_class_counts = {class_id: 0 for class_id in CLASS_NAMES}
 
         for tracked_object in tracked_objects:
             track_id = tracked_object.track_id
-            if track_id in active_track_ids:
+            if track_id in observed_track_ids:
                 continue
 
-            active_track_ids.add(track_id)
+            observed_track_ids.add(track_id)
             self.track_frames[track_id] += 1
-            if track_id in self.counted_tracks:
-                continue
             if self.track_frames[track_id] < self.min_track_frames:
                 continue
 
@@ -124,22 +133,34 @@ class ObjectCounter:
             if tracked_object.confidence < confidence_threshold:
                 continue
 
-            self.counted_tracks[track_id] = tracked_object.class_id
-            self.class_counts[tracked_object.class_id] += 1
+            active_class_counts[tracked_object.class_id] += 1
+            if track_id not in self.counted_tracks:
+                self.counted_tracks[track_id] = tracked_object.class_id
+                self.class_counts[tracked_object.class_id] += 1
 
-        vehicle_count = (
+        active_vehicle = (
+            active_class_counts[1]
+            + active_class_counts[2]
+            + active_class_counts[3]
+        )
+        unique_vehicle = (
             self.class_counts[1]
             + self.class_counts[2]
             + self.class_counts[3]
         )
         return CountSnapshot(
-            total_count=len(self.counted_tracks),
-            vehicle_count=vehicle_count,
-            person_count=self.class_counts[0],
-            car_count=self.class_counts[1],
-            truck_count=self.class_counts[2],
-            bus_count=self.class_counts[3],
-            active_tracks=len(active_track_ids),
+            active_total=sum(active_class_counts.values()),
+            active_vehicle=active_vehicle,
+            active_person=active_class_counts[0],
+            active_car=active_class_counts[1],
+            active_truck=active_class_counts[2],
+            active_bus=active_class_counts[3],
+            unique_total=len(self.counted_tracks),
+            unique_vehicle=unique_vehicle,
+            unique_person=self.class_counts[0],
+            unique_car=self.class_counts[1],
+            unique_truck=self.class_counts[2],
+            unique_bus=self.class_counts[3],
         )
 
 
@@ -329,15 +350,15 @@ def draw_statistics(
     counts: CountSnapshot,
     fps: float,
 ) -> None:
-    """Draw cumulative counts, active tracks, and FPS on a frame."""
+    """Draw active counts prominently and cumulative unique total secondarily."""
     lines = (
-        f"Total: {counts.total_count}",
-        f"Vehicle: {counts.vehicle_count}",
-        f"Person: {counts.person_count}",
-        f"Car: {counts.car_count}",
-        f"Truck: {counts.truck_count}",
-        f"Bus: {counts.bus_count}",
-        f"Active Tracks: {counts.active_tracks}",
+        f"Active Total: {counts.active_total}",
+        f"Active Vehicle: {counts.active_vehicle}",
+        f"Active Person: {counts.active_person}",
+        f"Active Car: {counts.active_car}",
+        f"Active Truck: {counts.active_truck}",
+        f"Active Bus: {counts.active_bus}",
+        f"Unique Total: {counts.unique_total}",
         f"FPS: {fps:.1f}",
     )
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -363,7 +384,12 @@ def draw_statistics(
     cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
 
     for index, line in enumerate(lines):
-        color = (0, 255, 255) if line.startswith("FPS") else (255, 255, 255)
+        if line.startswith("FPS"):
+            color = (0, 255, 255)
+        elif line.startswith("Unique"):
+            color = (180, 180, 180)
+        else:
+            color = (255, 255, 255)
         cv2.putText(
             frame,
             line,
@@ -397,13 +423,18 @@ def write_csv_rows(
                 "center_x": tracked_object.center_x,
                 "center_y": tracked_object.center_y,
                 "direction": tracked_object.direction,
-                "total_count": counts.total_count,
-                "vehicle_count": counts.vehicle_count,
-                "person_count": counts.person_count,
-                "car_count": counts.car_count,
-                "truck_count": counts.truck_count,
-                "bus_count": counts.bus_count,
-                "active_tracks": counts.active_tracks,
+                "active_total": counts.active_total,
+                "active_vehicle": counts.active_vehicle,
+                "active_person": counts.active_person,
+                "active_car": counts.active_car,
+                "active_truck": counts.active_truck,
+                "active_bus": counts.active_bus,
+                "unique_total": counts.unique_total,
+                "unique_vehicle": counts.unique_vehicle,
+                "unique_person": counts.unique_person,
+                "unique_car": counts.unique_car,
+                "unique_truck": counts.unique_truck,
+                "unique_bus": counts.unique_bus,
             }
         )
 
