@@ -307,16 +307,26 @@ track ID tabanlıdır.
 ## Speed Estimation
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
-tahmini yapılır. İki merkez noktası arasındaki piksel mesafesi, kaynak videonun
-FPS değeri kullanılarak geçen zamana bölünür:
+tahmini yapılır. Bounding box titreşimini azaltmak için merkez koordinatlarına
+üç noktalık moving average uygulanır.
+
+Hız hesabı bir frame farkına göre yapılmaz. Track en az sekiz merkez gözlemine
+ulaştığında son sekiz yumuşatılmış noktanın toplam piksel yolu, pencerenin
+toplam süresine bölünür:
 
 ```text
 speed_px_per_sec = pixel_distance / time_difference
 ```
 
-Ani koordinat değişimlerinin etkisini azaltmak için son en fazla beş merkez
-noktası arasındaki segment hızlarının ortalaması alınır. En az iki merkez
-noktası bulunmayan kısa track'lerde hız `0.0 px/s` olarak gösterilir.
+Son sekiz nokta arasındaki ortalama hareket varsayılan olarak 5 pikselden
+küçükse nesne `stable` kabul edilir ve hız `0.0 px/s` olarak yazılır. Eşik
+komut satırından değiştirilebilir:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960 --speed-threshold 5
+```
+
+Sekiz gözlemden kısa track'lerde de hız `0.0 px/s` olarak gösterilir.
 
 Video üzerindeki nesne etiketi sınıf, ID, yön ve hızı birlikte gösterir:
 
@@ -324,10 +334,12 @@ Video üzerindeki nesne etiketi sınıf, ID, yön ve hızı birlikte gösterir:
 ID 12 | Car 0.87 | right | 42.3 px/s
 ```
 
-Hız değeri CSV dosyasındaki `speed_px_per_sec` kolonuna da yazılır. Bu değer
-gerçek dünya hızı veya km/h değildir; kamera perspektifi, irtifa ve ölçek
-kalibrasyonu yapılmadığı için yalnızca görüntü düzlemindeki göreli piksel
-hızıdır.
+Hız değeri CSV dosyasındaki `speed_px_per_sec` kolonuna da yazılır. Stable
+nesnelerde bu kolon `0` değerini taşır.
+
+Bu hız değeri gerçek km/h değildir. Piksel tabanlı göreli ve yaklaşık bir
+hızdır; kamera hareketi, perspektif, irtifa ve görüntü ölçeğinden etkilenir.
+Gerçek dünya hızı için kamera kalibrasyonu ve sahne ölçeği gerekir.
 
 ## Proje Yapısı
 

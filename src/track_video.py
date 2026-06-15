@@ -203,15 +203,23 @@ class ObjectCounter:
 class TrackHistory:
     """Store center observations and calculate direction and pixel speed."""
 
+    SPEED_WINDOW = 8
+    SMOOTHING_WINDOW = 3
+
     def __init__(
         self,
         history_length: int = 30,
         direction_threshold: int = 8,
+        speed_threshold: float = 5.0,
         retention_frames: int = 300,
     ) -> None:
         self.history_length = history_length
         self.direction_threshold = direction_threshold
+        self.speed_threshold = speed_threshold
         self.retention_frames = retention_frames
+        self.raw_points: dict[int, deque[tuple[int, int, int]]] = defaultdict(
+            lambda: deque(maxlen=self.history_length)
+        )
         self.points: dict[int, deque[tuple[int, int, int]]] = defaultdict(
             lambda: deque(maxlen=self.history_length)
         )
@@ -225,56 +233,63 @@ class TrackHistory:
         source_fps: float,
     ) -> tuple[str, float]:
         """Append a center observation and return direction and smoothed speed."""
-        history = self.points[track_id]
-        history.append((frame_number, center[0], center[1]))
-        self.last_seen[track_id] = frame_number
-        return self.direction(track_id), self.speed_px_per_sec(
-            track_id,
-            source_fps,
+        raw_history = self.raw_points[track_id]
+        raw_history.append((frame_number, center[0], center[1]))
+        smoothing_points = tuple(raw_history)[-self.SMOOTHING_WINDOW :]
+        smoothed_x = round(
+            sum(point[1] for point in smoothing_points)
+            / len(smoothing_points)
+        )
+        smoothed_y = round(
+            sum(point[2] for point in smoothing_points)
+            / len(smoothing_points)
         )
 
-    def direction(self, track_id: int) -> str:
-        """Calculate direction from the oldest to the newest stored center."""
         history = self.points[track_id]
-        if len(history) < 2:
-            return "stable"
+        history.append((frame_number, smoothed_x, smoothed_y))
+        self.last_seen[track_id] = frame_number
+        return self.motion(track_id, source_fps)
 
-        _, start_x, start_y = history[0]
-        _, end_x, end_y = history[-1]
+    def motion(self, track_id: int, source_fps: float) -> tuple[str, float]:
+        """Return direction and windowed speed from smoothed center points."""
+        recent_points = tuple(self.points[track_id])[-self.SPEED_WINDOW :]
+        if len(recent_points) < self.SPEED_WINDOW or source_fps <= 0:
+            return "stable", 0.0
+
+        segment_distances: list[float] = []
+        for start, end in zip(recent_points, recent_points[1:]):
+            _, start_x, start_y = start
+            _, end_x, end_y = end
+            segment_distances.append(
+                math.hypot(end_x - start_x, end_y - start_y)
+            )
+
+        average_movement = sum(segment_distances) / len(segment_distances)
+        if average_movement < self.speed_threshold:
+            return "stable", 0.0
+
+        start_frame, start_x, start_y = recent_points[0]
+        end_frame, end_x, end_y = recent_points[-1]
+        frame_difference = end_frame - start_frame
+        if frame_difference <= 0:
+            return "stable", 0.0
+
         delta_x = end_x - start_x
         delta_y = end_y - start_y
-
         if (
             abs(delta_x) <= self.direction_threshold
             and abs(delta_y) <= self.direction_threshold
         ):
-            return "stable"
+            return "stable", 0.0
+
+        total_distance = sum(segment_distances)
+        time_difference = frame_difference / source_fps
+        speed_px_per_sec = total_distance / time_difference
         if abs(delta_x) >= abs(delta_y):
-            return "right" if delta_x > 0 else "left"
-        return "down" if delta_y > 0 else "up"
-
-    def speed_px_per_sec(self, track_id: int, source_fps: float) -> float:
-        """Return mean segment speed over the latest five center points."""
-        history = self.points[track_id]
-        recent_points = tuple(history)[-5:]
-        if len(recent_points) < 2 or source_fps <= 0:
-            return 0.0
-
-        segment_speeds: list[float] = []
-        for start, end in zip(recent_points, recent_points[1:]):
-            start_frame, start_x, start_y = start
-            end_frame, end_x, end_y = end
-            frame_difference = end_frame - start_frame
-            if frame_difference <= 0:
-                continue
-
-            pixel_distance = math.hypot(end_x - start_x, end_y - start_y)
-            time_difference = frame_difference / source_fps
-            segment_speeds.append(pixel_distance / time_difference)
-
-        if not segment_speeds:
-            return 0.0
-        return sum(segment_speeds) / len(segment_speeds)
+            direction = "right" if delta_x > 0 else "left"
+        else:
+            direction = "down" if delta_y > 0 else "up"
+        return direction, speed_px_per_sec
 
     def get_points(self, track_id: int) -> tuple[tuple[int, int], ...]:
         """Return a track's center history for trajectory drawing."""
@@ -290,6 +305,7 @@ class TrackHistory:
             if frame_number - last_frame > self.retention_frames
         ]
         for track_id in expired_ids:
+            self.raw_points.pop(track_id, None)
             self.points.pop(track_id, None)
             self.last_seen.pop(track_id, None)
 
@@ -518,6 +534,7 @@ def process_video(
     image_size: int,
     history_length: int,
     direction_threshold: int,
+    speed_threshold: float,
     thresholds: ClassConfidenceThresholds,
     min_track_frames: int,
 ) -> tuple[Path, Path, int, int]:
@@ -541,6 +558,7 @@ def process_video(
         history = TrackHistory(
             history_length=history_length,
             direction_threshold=direction_threshold,
+            speed_threshold=speed_threshold,
         )
         counter = ObjectCounter(
             thresholds=thresholds,
@@ -673,6 +691,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Maximum pixel displacement considered stable (default: 8).",
     )
     parser.add_argument(
+        "--speed-threshold",
+        type=float,
+        default=5.0,
+        help=(
+            "Average pixel movement below which speed is zero "
+            "(default: 5)."
+        ),
+    )
+    parser.add_argument(
         "--person-conf",
         type=float,
         default=0.25,
@@ -716,11 +743,17 @@ def main() -> int:
     if args.imgsz <= 0:
         LOGGER.error("--imgsz must be greater than zero.")
         return 2
-    if args.history_length < 2:
-        LOGGER.error("--history-length must be at least 2.")
+    if args.history_length < TrackHistory.SPEED_WINDOW:
+        LOGGER.error(
+            "--history-length must be at least %d.",
+            TrackHistory.SPEED_WINDOW,
+        )
         return 2
     if args.direction_threshold < 0:
         LOGGER.error("--direction-threshold cannot be negative.")
+        return 2
+    if args.speed_threshold < 0:
+        LOGGER.error("--speed-threshold cannot be negative.")
         return 2
     class_thresholds = {
         "--person-conf": args.person_conf,
@@ -752,6 +785,7 @@ def main() -> int:
             image_size=args.imgsz,
             history_length=args.history_length,
             direction_threshold=args.direction_threshold,
+            speed_threshold=args.speed_threshold,
             thresholds=ClassConfidenceThresholds(
                 person=args.person_conf,
                 car=args.car_conf,
