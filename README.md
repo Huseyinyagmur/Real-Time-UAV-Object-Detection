@@ -263,7 +263,7 @@ outputs/logs/tracking.csv
 Tracking CSV kolonları final 2-class mantığıyla şu bilgileri içerir:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,speed_px_per_sec,active_total,active_vehicle,active_person,unique_total,unique_vehicle,unique_person
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,speed_px_per_sec,active_total,active_vehicle,active_person,unique_total,unique_vehicle,unique_person,line_vehicle_up,line_vehicle_down,line_person_up,line_person_down,line_vehicle_left,line_vehicle_right,line_person_left,line_person_right
 ```
 
 ## Geliştirilmiş Nesne Sayımı
@@ -301,6 +301,64 @@ gösterilmez. Panelde görmek için `--show-unique` kullanılabilir.
 4-class deney sürümünde `active_car`, `active_truck`, `active_bus` gibi alt
 araç kırılımları kullanılmıştır; final 2-class sistemde bu kırılımlar
 `active_vehicle` altında birleştirilmiştir.
+
+## Line Crossing Counter
+
+Line Crossing Counter, ByteTrack tarafından takip edilen `person` ve `vehicle`
+nesnelerinin video üzerine çizilen sanal bir çizgiyi geçmesini sayar.
+Varsayılan çizgi yataydır ve frame yüksekliğinin %50 konumuna çizilir.
+
+Çizgi ayarları:
+
+- `--line-orientation horizontal`
+- `--line-orientation vertical`
+- `--line-position 0.5`
+
+Horizontal çizgide yönlü sayaçlar:
+
+- `vehicle_up`
+- `vehicle_down`
+- `person_up`
+- `person_down`
+
+Vertical çizgide yönlü sayaçlar:
+
+- `vehicle_left`
+- `vehicle_right`
+- `person_left`
+- `person_right`
+
+Aynı `track_id` aynı yön için yalnızca bir kez sayılır. Örneğin bir nesne
+horizontal çizgiyi `down` yönünde geçtikten sonra aynı ID ile tekrar `down`
+yönünde sayılmaz; ancak ters yönde geçerse ayrı yön olarak sayılabilir.
+
+Horizontal line örneği:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation horizontal --line-position 0.5
+```
+
+Vertical line örneği:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.5
+```
+
+Panelde çizgi yönüne göre line crossing bilgileri gösterilir:
+
+```text
+Active Total: 32
+Active Vehicle: 27
+Active Person: 5
+Line Vehicle Up: 12
+Line Vehicle Down: 8
+Line Person Up: 3
+Line Person Down: 1
+FPS: 24.8
+```
+
+Video üzerinde çizgi belirgin sarı renkle çizilir ve yanında `Counting Line`
+etiketi gösterilir. Line crossing sayaçları CSV dosyasına da yazılır.
 
 ## Speed Estimation
 

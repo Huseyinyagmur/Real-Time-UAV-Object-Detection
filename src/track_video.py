@@ -59,6 +59,14 @@ CSV_COLUMNS = (
     "unique_total",
     "unique_vehicle",
     "unique_person",
+    "line_vehicle_up",
+    "line_vehicle_down",
+    "line_person_up",
+    "line_person_down",
+    "line_vehicle_left",
+    "line_vehicle_right",
+    "line_person_left",
+    "line_person_right",
 )
 
 
@@ -90,6 +98,20 @@ class CountSnapshot:
     unique_total: int
     unique_vehicle: int
     unique_person: int
+
+
+@dataclass(frozen=True)
+class LineCrossingSnapshot:
+    """Directional line crossing totals for person and vehicle classes."""
+
+    vehicle_up: int = 0
+    vehicle_down: int = 0
+    person_up: int = 0
+    person_down: int = 0
+    vehicle_left: int = 0
+    vehicle_right: int = 0
+    person_left: int = 0
+    person_right: int = 0
 
 
 @dataclass(frozen=True)
@@ -175,6 +197,107 @@ class ObjectCounter:
             unique_total=len(self.counted_tracks),
             unique_vehicle=unique_vehicle,
             unique_person=self.class_counts[0],
+        )
+
+
+class LineCrossingCounter:
+    """Count each track once per crossing direction."""
+
+    def __init__(
+        self,
+        orientation: str = "horizontal",
+        position: float = 0.5,
+    ) -> None:
+        self.orientation = orientation
+        self.position = position
+        self.previous_centers: dict[int, tuple[int, int]] = {}
+        self.counted_crossings: set[tuple[int, str]] = set()
+        self.counts = {
+            "vehicle_up": 0,
+            "vehicle_down": 0,
+            "person_up": 0,
+            "person_down": 0,
+            "vehicle_left": 0,
+            "vehicle_right": 0,
+            "person_left": 0,
+            "person_right": 0,
+        }
+
+    def line_coordinate(self, frame_width: int, frame_height: int) -> int:
+        """Return the pixel coordinate of the configured counting line."""
+        if self.orientation == "horizontal":
+            return round(frame_height * self.position)
+        return round(frame_width * self.position)
+
+    def update(
+        self,
+        tracked_objects: list[TrackedObject],
+        frame_width: int,
+        frame_height: int,
+    ) -> LineCrossingSnapshot:
+        """Update line crossing counters from current tracked centers."""
+        line_coordinate = self.line_coordinate(frame_width, frame_height)
+
+        for tracked_object in tracked_objects:
+            current_center = (tracked_object.center_x, tracked_object.center_y)
+            previous_center = self.previous_centers.get(tracked_object.track_id)
+            self.previous_centers[tracked_object.track_id] = current_center
+
+            if previous_center is None:
+                continue
+
+            crossing_direction = self.crossing_direction(
+                previous_center,
+                current_center,
+                line_coordinate,
+            )
+            if crossing_direction is None:
+                continue
+
+            crossing_key = (tracked_object.track_id, crossing_direction)
+            if crossing_key in self.counted_crossings:
+                continue
+
+            self.counted_crossings.add(crossing_key)
+            class_prefix = "person" if tracked_object.class_id == 0 else "vehicle"
+            self.counts[f"{class_prefix}_{crossing_direction}"] += 1
+
+        return self.snapshot()
+
+    def crossing_direction(
+        self,
+        previous_center: tuple[int, int],
+        current_center: tuple[int, int],
+        line_coordinate: int,
+    ) -> str | None:
+        """Return the crossing direction, or None if no crossing occurred."""
+        previous_x, previous_y = previous_center
+        current_x, current_y = current_center
+
+        if self.orientation == "horizontal":
+            if previous_y > line_coordinate >= current_y:
+                return "up"
+            if previous_y < line_coordinate <= current_y:
+                return "down"
+            return None
+
+        if previous_x > line_coordinate >= current_x:
+            return "left"
+        if previous_x < line_coordinate <= current_x:
+            return "right"
+        return None
+
+    def snapshot(self) -> LineCrossingSnapshot:
+        """Return a typed snapshot of all crossing counters."""
+        return LineCrossingSnapshot(
+            vehicle_up=self.counts["vehicle_up"],
+            vehicle_down=self.counts["vehicle_down"],
+            person_up=self.counts["person_up"],
+            person_down=self.counts["person_down"],
+            vehicle_left=self.counts["vehicle_left"],
+            vehicle_right=self.counts["vehicle_right"],
+            person_left=self.counts["person_left"],
+            person_right=self.counts["person_right"],
         )
 
 
@@ -402,16 +525,36 @@ def draw_track(
 def draw_statistics(
     frame: object,
     counts: CountSnapshot,
+    line_counts: LineCrossingSnapshot,
     fps: float,
     show_unique: bool,
+    line_orientation: str,
 ) -> None:
     """Draw active counts prominently and cumulative unique total secondarily."""
     lines = [
         f"Active Total: {counts.active_total}",
         f"Active Vehicle: {counts.active_vehicle}",
         f"Active Person: {counts.active_person}",
-        f"FPS: {fps:.1f}",
     ]
+    if line_orientation == "horizontal":
+        lines.extend(
+            [
+                f"Line Vehicle Up: {line_counts.vehicle_up}",
+                f"Line Vehicle Down: {line_counts.vehicle_down}",
+                f"Line Person Up: {line_counts.person_up}",
+                f"Line Person Down: {line_counts.person_down}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Line Vehicle Left: {line_counts.vehicle_left}",
+                f"Line Vehicle Right: {line_counts.vehicle_right}",
+                f"Line Person Left: {line_counts.person_left}",
+                f"Line Person Right: {line_counts.person_right}",
+            ]
+        )
+    lines.append(f"FPS: {fps:.1f}")
     if show_unique:
         lines.insert(-1, f"Unique Tracks: {counts.unique_total}")
 
@@ -463,11 +606,44 @@ def draw_statistics(
         )
 
 
+def draw_counting_line(
+    frame: object,
+    line_counter: LineCrossingCounter,
+) -> None:
+    """Draw the configured virtual counting line on a frame."""
+    frame_height, frame_width = frame.shape[:2]
+    coordinate = line_counter.line_coordinate(frame_width, frame_height)
+    color = (0, 255, 255)
+    thickness = max(3, round(frame_width / 640))
+
+    if line_counter.orientation == "horizontal":
+        start_point = (0, coordinate)
+        end_point = (frame_width, coordinate)
+        text_point = (20, max(35, coordinate - 12))
+    else:
+        start_point = (coordinate, 0)
+        end_point = (coordinate, frame_height)
+        text_point = (min(frame_width - 240, coordinate + 12), 35)
+
+    cv2.line(frame, start_point, end_point, color, thickness, cv2.LINE_AA)
+    cv2.putText(
+        frame,
+        "Counting Line",
+        text_point,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        color,
+        2,
+        cv2.LINE_AA,
+    )
+
+
 def write_csv_rows(
     csv_writer: csv.DictWriter,
     frame_number: int,
     tracked_objects: list[TrackedObject],
     counts: CountSnapshot,
+    line_counts: LineCrossingSnapshot,
 ) -> None:
     """Write tracked objects from one frame to the CSV log."""
     for tracked_object in tracked_objects:
@@ -493,6 +669,14 @@ def write_csv_rows(
                 "unique_total": counts.unique_total,
                 "unique_vehicle": counts.unique_vehicle,
                 "unique_person": counts.unique_person,
+                "line_vehicle_up": line_counts.vehicle_up,
+                "line_vehicle_down": line_counts.vehicle_down,
+                "line_person_up": line_counts.person_up,
+                "line_person_down": line_counts.person_down,
+                "line_vehicle_left": line_counts.vehicle_left,
+                "line_vehicle_right": line_counts.vehicle_right,
+                "line_person_left": line_counts.person_left,
+                "line_person_right": line_counts.person_right,
             }
         )
 
@@ -510,6 +694,8 @@ def process_video(
     show_unique: bool,
     show_direction: bool,
     show_speed: bool,
+    line_orientation: str,
+    line_position: float,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
     model_path = validate_file(model_path, "Model")
@@ -536,6 +722,10 @@ def process_video(
         counter = ObjectCounter(
             thresholds=thresholds,
             min_track_frames=min_track_frames,
+        )
+        line_counter = LineCrossingCounter(
+            orientation=line_orientation,
+            position=line_position,
         )
         processed_frames = 0
         tracked_observations = 0
@@ -585,6 +775,11 @@ def process_video(
                     )
                     tracked_observations += len(tracked_objects)
                     counts = counter.update(results[0], tracked_objects)
+                    line_counts = line_counter.update(
+                        tracked_objects,
+                        width,
+                        height,
+                    )
 
                     for tracked_object in tracked_objects:
                         draw_track(
@@ -594,11 +789,13 @@ def process_video(
                             show_direction=show_direction,
                             show_speed=show_speed,
                         )
+                    draw_counting_line(frame, line_counter)
                     write_csv_rows(
                         csv_writer,
                         processed_frames,
                         tracked_objects,
                         counts,
+                        line_counts,
                     )
                     history.prune(processed_frames)
 
@@ -607,8 +804,10 @@ def process_video(
                     draw_statistics(
                         frame,
                         counts,
+                        line_counts,
                         instantaneous_fps,
                         show_unique=show_unique,
+                        line_orientation=line_orientation,
                     )
                     writer.write(frame)
 
@@ -716,6 +915,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show pixel speed in each object label.",
     )
+    parser.add_argument(
+        "--line-orientation",
+        choices=("horizontal", "vertical"),
+        default="horizontal",
+        help="Counting line orientation (default: horizontal).",
+    )
+    parser.add_argument(
+        "--line-position",
+        type=float,
+        default=0.5,
+        help=(
+            "Counting line position as a frame ratio between 0 and 1 "
+            "(default: 0.5)."
+        ),
+    )
     return parser
 
 
@@ -753,6 +967,9 @@ def main() -> int:
     if args.min_track_frames < 1:
         LOGGER.error("--min-track-frames must be at least 1.")
         return 2
+    if not 0.0 <= args.line_position <= 1.0:
+        LOGGER.error("--line-position must be between 0 and 1.")
+        return 2
     minimum_class_confidence = min(class_thresholds.values())
     if args.conf > minimum_class_confidence:
         LOGGER.warning(
@@ -779,6 +996,8 @@ def main() -> int:
             show_unique=args.show_unique,
             show_direction=args.show_direction,
             show_speed=args.show_speed,
+            line_orientation=args.line_orientation,
+            line_position=args.line_position,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
