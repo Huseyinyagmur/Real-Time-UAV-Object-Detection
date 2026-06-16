@@ -17,6 +17,7 @@ olarak **YOLO11s 2-Class** seçilmiştir.
 - Aktif nesne sayımı ve benzersiz track ID sayımı
 - Hareket yönü ve yörünge çizimi
 - Piksel tabanlı göreli hız tahmini
+- Line Crossing Counter ile yönlü nesne geçiş sayımı
 - Anlık inference FPS değerinin görüntülenmesi
 - İşlenmiş videonun MP4 formatında kaydedilmesi
 - Tespit ve takip sonuçlarının CSV olarak kaydedilmesi
@@ -100,6 +101,9 @@ dataset/yolo_4class/
 | YOLO11s (4-class) | 50 | 960 | 0.747 | 0.582 | 0.638 | 0.415 |
 | **YOLO11s (2-class)** | **50** | **960** | **0.787** | **0.638** | **0.710** | **0.407** |
 
+- YOLO11s 4-Class modeli mAP50-95 metriğinde çok az daha yüksek sonuç üretmiştir.
+- Ancak final sistemin amacı `person` ve `vehicle` tespiti ile kararlı takip yapmaktır.
+- YOLO11s 2-Class modeli daha yüksek mAP50 (`0.710`), daha yüksek recall (`0.638`) ve daha stabil tracking performansı sağladığı için final model olarak seçilmiştir.
 - En yüksek mAP50 sonucu **YOLO11s 2-Class** modelinde elde edilmiştir.
 - Person/Vehicle yaklaşımı, Car/Truck/Bus ayrımına göre daha kararlı sonuç vermiştir.
 - Vehicle sınıfında **mAP50 = 0.818** elde edilmiştir.
@@ -395,6 +399,20 @@ Video üzerinde çizgi sarı renkle, varsayılan olarak 2 piksel kalınlıkta
 çizilir ve yanında küçük `Counting Line` etiketi gösterilir. Line crossing
 sayaçları CSV dosyasına da yazılır.
 
+## Demo Video
+
+Final demo videosu olarak yoğun otoyol trafiği içeren yüksek çözünürlüklü
+`test3.mp4` kullanılmıştır. Bu video tracking, line crossing ve active count
+özelliklerini birlikte göstermek amacıyla seçilmiştir. Demo sırasında araçlar
+`Vehicle` sınıfı olarak tespit edilir, ByteTrack ile takip edilir ve dikey
+sanal çizgiyi geçiş yönlerine göre sayılır.
+
+Demo komutu:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.45 --line-thickness 2
+```
+
 ## Speed Estimation
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
@@ -453,6 +471,10 @@ UAV_Object_Detection/
 └── README.md
 ```
 
+`outputs/logs/` ve `outputs/videos/` klasörleri çalışma sırasında otomatik
+oluşturulur ve GitHub deposuna dahil edilmez. Eğitim sonuç görselleri ise
+benchmark ve model karşılaştırması amacıyla repoda tutulur.
+
 ## Gelecek Çalışmalar
 
 - ByteTrack parametrelerinin farklı sahneler için optimize edilmesi
@@ -460,8 +482,12 @@ UAV_Object_Detection/
 - Kamera hareketi telafisi
 - Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
+- ROI (Region of Interest) sayımı
+- Trafik yoğunluğu heatmap üretimi
+- Çoklu line crossing bölgeleri
 - Canlı kamera ve RTSP akış desteği
-- Tespit ve takip sonuçlarını gösteren web dashboard
+- Streamlit tabanlı web dashboard
+- SAHI ile küçük nesne tespiti optimizasyonu
 
 ## Sonuç
 
@@ -472,3 +498,8 @@ UAV_Object_Detection/
 
 Bu model proje içerisinde nesne tespiti, ByteTrack tabanlı takip, aktif nesne
 sayımı, yön analizi ve piksel tabanlı hız tahmini için kullanılmaktadır.
+
+Sistem artık nesne tespiti, çoklu nesne takibi, aktif nesne sayımı, yön
+analizi, piksel tabanlı hız tahmini ve line crossing analitiğini tek bir video
+pipeline'ında sunmaktadır. Final demo yoğun trafik videoları üzerinde başarıyla
+test edilmiştir.
