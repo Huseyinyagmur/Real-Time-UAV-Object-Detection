@@ -1,10 +1,11 @@
-"""Generate traffic density heatmaps from person/vehicle detections."""
+"""Generate traffic density and occupancy heatmaps from video detections."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,11 +43,15 @@ CSV_COLUMNS = (
     "confidence",
     "center_x",
     "center_y",
+    "mode",
+    "weight",
 )
+HEATMAP_MODES = ("density", "occupancy")
+OCCUPANCY_SPEED_NORMALIZER = 50.0
 
 
 @dataclass(frozen=True)
-class HeatmapDetection:
+class HeatmapPoint:
     """One filtered detection center used by the heatmap."""
 
     frame_number: int
@@ -55,6 +60,8 @@ class HeatmapDetection:
     confidence: float
     center_x: int
     center_y: int
+    mode: str
+    weight: float
 
 
 @dataclass(frozen=True)
@@ -66,27 +73,27 @@ class HeatmapOutputs:
     csv_path: Path
 
 
-def create_output_paths(source_stem: str) -> HeatmapOutputs:
+def create_output_paths(source_stem: str, mode: str) -> HeatmapOutputs:
     """Create output directories and return all heatmap output paths."""
     DEFAULT_HEATMAP_DIR.mkdir(parents=True, exist_ok=True)
     DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
     return HeatmapOutputs(
-        heatmap_path=DEFAULT_HEATMAP_DIR / f"{source_stem}_heatmap.png",
-        overlay_path=DEFAULT_HEATMAP_DIR / f"{source_stem}_overlay.png",
+        heatmap_path=DEFAULT_HEATMAP_DIR / f"{source_stem}_{mode}_heatmap.png",
+        overlay_path=DEFAULT_HEATMAP_DIR / f"{source_stem}_{mode}_overlay.png",
         csv_path=DEFAULT_LOG_DIR / f"{source_stem}_heatmap_points.csv",
     )
 
 
-def extract_detections(
+def extract_density_points(
     result: object,
     frame_number: int,
     selected_class_ids: tuple[int, ...],
-) -> list[HeatmapDetection]:
-    """Extract filtered center points from one Ultralytics result."""
-    detections: list[HeatmapDetection] = []
+) -> list[HeatmapPoint]:
+    """Extract equally weighted center points from one detection result."""
+    points: list[HeatmapPoint] = []
     boxes = getattr(result, "boxes", None)
     if boxes is None:
-        return detections
+        return points
 
     for box in boxes:
         class_id = int(box.cls.item())
@@ -94,45 +101,113 @@ def extract_detections(
             continue
 
         x1_float, y1_float, x2_float, y2_float = box.xyxy[0].tolist()
-        detections.append(
-            HeatmapDetection(
+        points.append(
+            HeatmapPoint(
                 frame_number=frame_number,
                 class_id=class_id,
                 class_name=CLASS_NAMES[class_id],
                 confidence=float(box.conf.item()),
                 center_x=round((x1_float + x2_float) / 2.0),
                 center_y=round((y1_float + y2_float) / 2.0),
+                mode="density",
+                weight=1.0,
             )
         )
 
-    return detections
+    return points
 
 
-def add_detection_to_heatmap(
+def extract_occupancy_points(
+    result: object,
+    frame_number: int,
+    selected_class_ids: tuple[int, ...],
+    previous_centers: dict[int, tuple[int, int]],
+    max_weight: float | None,
+) -> list[HeatmapPoint]:
+    """Extract speed-weighted center points from one tracking result."""
+    points: list[HeatmapPoint] = []
+    boxes = getattr(result, "boxes", None)
+    if boxes is None:
+        return points
+
+    for box in boxes:
+        class_id = int(box.cls.item())
+        if class_id not in selected_class_ids:
+            continue
+
+        x1_float, y1_float, x2_float, y2_float = box.xyxy[0].tolist()
+        center_x = round((x1_float + x2_float) / 2.0)
+        center_y = round((y1_float + y2_float) / 2.0)
+        if box.id is None:
+            speed_factor = 1.0
+        else:
+            track_id = int(box.id.item())
+            previous_center = previous_centers.get(track_id)
+            previous_centers[track_id] = (center_x, center_y)
+
+            if previous_center is None:
+                speed_factor = 1.0
+            else:
+                distance = math.hypot(
+                    center_x - previous_center[0],
+                    center_y - previous_center[1],
+                )
+                normalized_speed = distance / OCCUPANCY_SPEED_NORMALIZER
+                speed_factor = 1.0 / (1.0 + normalized_speed)
+
+        weight = speed_factor
+        if max_weight is not None:
+            weight = min(weight, max_weight)
+
+        points.append(
+            HeatmapPoint(
+                frame_number=frame_number,
+                class_id=class_id,
+                class_name=CLASS_NAMES[class_id],
+                confidence=float(box.conf.item()),
+                center_x=center_x,
+                center_y=center_y,
+                mode="occupancy",
+                weight=weight,
+            )
+        )
+
+    return points
+
+
+def add_point_to_heatmap(
     heatmap: np.ndarray,
-    detection: HeatmapDetection,
+    point: HeatmapPoint,
     radius: int,
 ) -> None:
-    """Accumulate one detection center into the heatmap matrix."""
+    """Accumulate one weighted point into the heatmap matrix."""
     height, width = heatmap.shape[:2]
-    if not 0 <= detection.center_x < width:
+    if not 0 <= point.center_x < width:
         return
-    if not 0 <= detection.center_y < height:
+    if not 0 <= point.center_y < height:
         return
 
     cv2.circle(
         heatmap,
-        (detection.center_x, detection.center_y),
+        (point.center_x, point.center_y),
         radius,
-        1.0,
+        point.weight,
         -1,
         cv2.LINE_AA,
     )
 
 
-def build_heatmap_image(heatmap: np.ndarray) -> np.ndarray:
+def build_heatmap_image(heatmap: np.ndarray, blur_radius: int) -> np.ndarray:
     """Convert a float density matrix into a blue-to-red color heatmap."""
-    smoothed = cv2.GaussianBlur(heatmap, (0, 0), sigmaX=15, sigmaY=15)
+    if blur_radius > 0:
+        smoothed = cv2.GaussianBlur(
+            heatmap,
+            (0, 0),
+            sigmaX=blur_radius,
+            sigmaY=blur_radius,
+        )
+    else:
+        smoothed = heatmap
     if float(smoothed.max()) <= 0:
         normalized = np.zeros(smoothed.shape, dtype=np.uint8)
     else:
@@ -158,17 +233,19 @@ def create_overlay(
 
 def write_csv_rows(
     csv_writer: csv.DictWriter,
-    detections: list[HeatmapDetection],
+    points: list[HeatmapPoint],
 ) -> None:
     """Write center-point detections to the CSV log."""
-    for detection in detections:
+    for point in points:
         csv_writer.writerow(
             {
-                "frame": detection.frame_number,
-                "class": detection.class_name,
-                "confidence": f"{detection.confidence:.6f}",
-                "center_x": detection.center_x,
-                "center_y": detection.center_y,
+                "frame": point.frame_number,
+                "class": point.class_name,
+                "confidence": f"{point.confidence:.6f}",
+                "center_x": point.center_x,
+                "center_y": point.center_y,
+                "mode": point.mode,
+                "weight": f"{point.weight:.6f}",
             }
         )
 
@@ -179,8 +256,12 @@ def process_video(
     confidence: float,
     image_size: int,
     class_filter: str,
+    mode: str,
     alpha: float,
     sample_rate: int,
+    blur_radius: int,
+    point_radius: int,
+    max_weight: float | None,
 ) -> tuple[HeatmapOutputs, int, int]:
     """Generate heatmap outputs and return paths plus summary totals."""
     model_path = validate_file(model_path, "Model")
@@ -195,18 +276,20 @@ def process_video(
                 f"Model could not be loaded: {model_path}"
             ) from exc
 
-        outputs = create_output_paths(prepared_source.output_stem)
+        outputs = create_output_paths(prepared_source.output_stem, mode)
         capture = open_video(prepared_source.path)
         processed_frames = 0
         total_detections = 0
         reference_frame: np.ndarray | None = None
+        previous_centers: dict[int, tuple[int, int]] = {}
+        use_tracking = mode == "occupancy"
 
         try:
             width, height, _, frame_count = get_video_properties(capture)
             heatmap = np.zeros((height, width), dtype=np.float32)
-            point_radius = max(5, round(min(width, height) * 0.006))
             LOGGER.info(
-                "Generating heatmap: %dx%d, %d frames, sample rate %d",
+                "Generating %s heatmap: %dx%d, %d frames, sample rate %d",
+                mode,
                 width,
                 height,
                 frame_count,
@@ -234,29 +317,73 @@ def process_video(
                     if (frame_number - 1) % sample_rate != 0:
                         continue
 
-                    results = model.predict(
-                        source=frame,
-                        conf=confidence,
-                        imgsz=image_size,
-                        classes=list(selected_class_ids),
-                        verbose=False,
-                    )
-                    detections = extract_detections(
-                        results[0],
-                        frame_number,
-                        selected_class_ids,
-                    )
-
-                    for detection in detections:
-                        add_detection_to_heatmap(
-                            heatmap,
-                            detection,
-                            point_radius,
+                    if mode == "occupancy" and use_tracking:
+                        try:
+                            results = model.track(
+                                source=frame,
+                                persist=True,
+                                tracker="bytetrack.yaml",
+                                conf=confidence,
+                                imgsz=image_size,
+                                classes=list(selected_class_ids),
+                                verbose=False,
+                            )
+                        except (ImportError, ModuleNotFoundError) as exc:
+                            LOGGER.warning(
+                                "ByteTrack dependencies are unavailable; "
+                                "falling back to detection-based occupancy."
+                            )
+                            LOGGER.debug("ByteTrack import error: %s", exc)
+                            use_tracking = False
+                            results = model.predict(
+                                source=frame,
+                                conf=confidence,
+                                imgsz=image_size,
+                                classes=list(selected_class_ids),
+                                verbose=False,
+                            )
+                        points = extract_occupancy_points(
+                            results[0],
+                            frame_number,
+                            selected_class_ids,
+                            previous_centers,
+                            max_weight,
                         )
-                    write_csv_rows(csv_writer, detections)
+                    elif mode == "occupancy":
+                        results = model.predict(
+                            source=frame,
+                            conf=confidence,
+                            imgsz=image_size,
+                            classes=list(selected_class_ids),
+                            verbose=False,
+                        )
+                        points = extract_occupancy_points(
+                            results[0],
+                            frame_number,
+                            selected_class_ids,
+                            previous_centers,
+                            max_weight,
+                        )
+                    else:
+                        results = model.predict(
+                            source=frame,
+                            conf=confidence,
+                            imgsz=image_size,
+                            classes=list(selected_class_ids),
+                            verbose=False,
+                        )
+                        points = extract_density_points(
+                            results[0],
+                            frame_number,
+                            selected_class_ids,
+                        )
+
+                    for point in points:
+                        add_point_to_heatmap(heatmap, point, point_radius)
+                    write_csv_rows(csv_writer, points)
 
                     processed_frames += 1
-                    total_detections += len(detections)
+                    total_detections += len(points)
                     if processed_frames % 100 == 0:
                         LOGGER.info(
                             "Processed %d sampled frames",
@@ -270,7 +397,7 @@ def process_video(
         if processed_frames == 0:
             raise InferenceError("No frames were sampled from the source video.")
 
-        heatmap_image = build_heatmap_image(heatmap)
+        heatmap_image = build_heatmap_image(heatmap, blur_radius)
         overlay_image = create_overlay(reference_frame, heatmap_image, alpha)
         if not cv2.imwrite(str(outputs.heatmap_path), heatmap_image):
             raise InferenceError(
@@ -319,6 +446,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Class filter for heatmap points (default: vehicle).",
     )
     parser.add_argument(
+        "--mode",
+        choices=HEATMAP_MODES,
+        default="density",
+        help="Heatmap mode: density or occupancy (default: density).",
+    )
+    parser.add_argument(
         "--alpha",
         type=float,
         default=0.45,
@@ -329,6 +462,24 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="Analyze every Nth frame (default: 1).",
+    )
+    parser.add_argument(
+        "--blur-radius",
+        type=int,
+        default=35,
+        help="Gaussian blur radius for the final heatmap (default: 35).",
+    )
+    parser.add_argument(
+        "--point-radius",
+        type=int,
+        default=8,
+        help="Radius of each accumulated center point in pixels (default: 8).",
+    )
+    parser.add_argument(
+        "--max-weight",
+        type=float,
+        default=None,
+        help="Optional maximum per-point weight clamp.",
     )
     return parser
 
@@ -350,6 +501,15 @@ def main() -> int:
     if args.sample_rate < 1:
         LOGGER.error("--sample-rate must be at least 1.")
         return 2
+    if args.blur_radius < 0:
+        LOGGER.error("--blur-radius cannot be negative.")
+        return 2
+    if args.point_radius < 1:
+        LOGGER.error("--point-radius must be at least 1.")
+        return 2
+    if args.max_weight is not None and args.max_weight <= 0:
+        LOGGER.error("--max-weight must be greater than zero when provided.")
+        return 2
 
     try:
         outputs, processed_frames, total_detections = process_video(
@@ -358,20 +518,25 @@ def main() -> int:
             confidence=args.conf,
             image_size=args.imgsz,
             class_filter=args.class_filter,
+            mode=args.mode,
             alpha=args.alpha,
             sample_rate=args.sample_rate,
+            blur_radius=args.blur_radius,
+            point_radius=args.point_radius,
+            max_weight=args.max_weight,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
         return 1
 
     LOGGER.info("Completed heatmap generation")
-    LOGGER.info("Processed sampled frames: %d", processed_frames)
-    LOGGER.info("Total detections: %d", total_detections)
+    LOGGER.info("Mode: %s", args.mode)
     LOGGER.info("Class filter: %s", args.class_filter)
-    LOGGER.info("Heatmap image: %s", outputs.heatmap_path)
-    LOGGER.info("Overlay image: %s", outputs.overlay_path)
-    LOGGER.info("CSV points: %s", outputs.csv_path)
+    LOGGER.info("Processed frames: %d", processed_frames)
+    LOGGER.info("Total detections: %d", total_detections)
+    LOGGER.info("Output heatmap path: %s", outputs.heatmap_path)
+    LOGGER.info("Output overlay path: %s", outputs.overlay_path)
+    LOGGER.info("Output CSV path: %s", outputs.csv_path)
     return 0
 
 

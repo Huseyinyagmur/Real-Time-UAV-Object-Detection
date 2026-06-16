@@ -424,6 +424,18 @@ Kırmızı bölgeler yüksek yoğunluğu, mavi bölgeler düşük yoğunluğu te
 Bu özellik traffic flow analizi, surveillance senaryoları ve UAV analytics
 çalışmaları için kullanılabilir.
 
+İki farklı heatmap modu bulunur:
+
+**Density heatmap**, nesnelerin video boyunca geçtiği yolları gösterir.
+"Araçlar nerelerden geçti?" sorusunu cevaplar ve trafik akış güzergahlarını
+anlamak için uygundur.
+
+**Occupancy heatmap**, nesnelerin daha uzun süre bulunduğu veya yavaşladığı
+bölgeleri vurgular. ByteTrack ile track geçmişi kullanılarak yaklaşık hareket
+miktarı hesaplanır; yavaşlayan veya duran nesneler heatmap üzerinde daha yüksek
+ağırlık bırakır. Trafik ışığı, kavşak merkezi, bekleme alanı ve yoğunluk analizi
+için daha uygundur.
+
 Heatmap pipeline:
 
 ```text
@@ -433,38 +445,49 @@ src/generate_heatmap.py
 Üretilen çıktılar:
 
 ```text
-outputs/heatmaps/<video_adi>_heatmap.png
-outputs/heatmaps/<video_adi>_overlay.png
+outputs/heatmaps/<video_adi>_density_heatmap.png
+outputs/heatmaps/<video_adi>_density_overlay.png
+outputs/heatmaps/<video_adi>_occupancy_heatmap.png
+outputs/heatmaps/<video_adi>_occupancy_overlay.png
 outputs/logs/<video_adi>_heatmap_points.csv
 ```
 
 CSV kolonları:
 
 ```text
-frame,class,confidence,center_x,center_y
+frame,class,confidence,center_x,center_y,mode,weight
 ```
 
-Vehicle heatmap:
+Density vehicle heatmap:
 
 ```powershell
-python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter vehicle --alpha 0.45
+python src/generate_heatmap.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter vehicle --mode density --alpha 0.45 --blur-radius 35 --point-radius 8
+```
+
+Occupancy vehicle heatmap:
+
+```powershell
+python src/generate_heatmap.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter vehicle --mode occupancy --alpha 0.45 --blur-radius 35 --point-radius 8
 ```
 
 Person heatmap:
 
 ```powershell
-python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --class-filter person --alpha 0.45
+python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --class-filter person --mode density --alpha 0.45
 ```
 
 All classes:
 
 ```powershell
-python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter all --alpha 0.45
+python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter all --mode density --alpha 0.45
 ```
 
 `--sample-rate` parametresiyle her kaç frame'de bir analiz yapılacağı
 ayarlanabilir. Örneğin `--sample-rate 5`, her 5 frame'den birini işler ve uzun
-videolarda daha hızlı özet heatmap üretir.
+videolarda daha hızlı özet heatmap üretir. `--blur-radius` son heatmap
+yumuşatma miktarını, `--point-radius` her merkez noktasının etki alanını,
+`--max-weight` ise occupancy modunda tek noktanın bırakabileceği maksimum
+ağırlığı kontrol eder.
 
 ## Speed Estimation
 
