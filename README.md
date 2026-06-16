@@ -322,12 +322,23 @@ Horizontal çizgide yönlü sayaçlar:
 - `person_up`
 - `person_down`
 
+Yön anlamı:
+
+- `Up`: Nesne çizgiyi aşağıdan yukarı geçti.
+- `Down`: Nesne çizgiyi yukarıdan aşağı geçti.
+
 Vertical çizgide yönlü sayaçlar:
 
 - `vehicle_left`
 - `vehicle_right`
 - `person_left`
 - `person_right`
+
+Yön anlamı:
+
+- `Vehicle Left`: Vehicle çizgiyi sağdan sola geçti.
+- `Vehicle Right`: Vehicle çizgiyi soldan sağa geçti.
+- `Person Left` / `Person Right`: Person sınıfı için aynı sol/sağ geçiş mantığı kullanılır.
 
 Aynı `track_id` aynı yön için yalnızca bir kez sayılır. Örneğin bir nesne
 horizontal çizgiyi `down` yönünde geçtikten sonra aynı ID ile tekrar `down`
@@ -338,9 +349,22 @@ tarafından diğer tarafına geçtiğinde artar. Çizgiyi geçmeyen nesneler akt
 nesne sayımında görünür, ancak line crossing değerini artırmaz. Bu nedenle
 çizgi konumu sahneye göre ayarlanmalıdır.
 
+Line crossing sayımı, kısa süreli kenar tespitlerini azaltmak için
+`--min-track-frames` filtresini kullanır. Bir track çizgiyi geçse bile en az bu
+kadar frame takip edilmeden line count değerine eklenmez. Ayrıca person için
+`--person-conf`, vehicle için `--vehicle-conf` eşiğinin altında kalan geçişler
+sayılmaz.
+
 Horizontal line y ekseninde, vertical line x ekseninde çalışır. `--line-position
-0.5` görüntünün orta noktasıdır. Yolun ve akışın konumuna göre `0.4`, `0.6`
-veya `0.7` gibi değerler denenebilir.
+0.5` görüntünün orta noktasıdır. Varsayılan konum horizontal çizgide `0.5`,
+vertical çizgide `0.45` olarak seçilir. Yolun ve akışın konumuna göre `0.4`,
+`0.6` veya `0.7` gibi değerler denenebilir.
+
+Önerilen vertical demo komutu:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test2.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.45 --line-thickness 2
+```
 
 Horizontal line örneği:
 
