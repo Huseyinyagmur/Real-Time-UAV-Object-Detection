@@ -1,24 +1,26 @@
 # Gerçek Zamanlı İHA Nesne Tespit Sistemi
 
-Bu proje, drone/İHA görüntülerinden insan ve araç tespiti yapan YOLO tabanlı
-bir bilgisayarlı görü sistemidir. VisDrone2019 veri seti üzerinde farklı YOLO
-modelleri eğitilmiş, karşılaştırılmış ve final model olarak **YOLO11s**
-seçilmiştir.
+Bu proje, drone/İHA görüntülerinden **person** ve **vehicle** tespiti yapan
+YOLO tabanlı bir bilgisayarlı görü sistemidir. VisDrone2019 veri seti üzerinde
+farklı YOLO modelleri ve sınıf yapılandırmaları denenmiş, güncel final model
+olarak **YOLO11s 2-Class** seçilmiştir.
 
 ## Proje Özellikleri
 
-- VisDrone annotation verilerini dört sınıflı YOLO formatına dönüştürme
+- VisDrone annotation verilerini YOLO formatına dönüştürme
+- Final model ile `Person` ve `Vehicle` tespiti
+- Önceki deney olarak 4-class `Person`, `Car`, `Truck`, `Bus` sürümünün korunması
 - Video üzerinde frame bazlı YOLO11s nesne tespiti
 - ByteTrack ile çoklu nesne takibi ve kalıcı `track_id` atama
-- `Person`, `Car`, `Truck` ve `Bus` sınıflarının tespiti
 - Bounding box, sınıf adı ve güven skorunun görüntüye çizilmesi
-- Her nesnenin merkez koordinatının hesaplanması ve işaretlenmesi
+- Nesne merkez koordinatının çıkarılması ve merkez noktasının işaretlenmesi
+- Aktif nesne sayımı ve benzersiz track ID sayımı
+- Hareket yönü ve yörünge çizimi
+- Piksel tabanlı göreli hız tahmini
 - Anlık inference FPS değerinin görüntülenmesi
 - İşlenmiş videonun MP4 formatında kaydedilmesi
-- Tespit sonuçlarının frame bazında CSV dosyasına yazılması
-- Yerel video dosyası ve doğrudan HTTP(S) video URL desteği
-- Track geçmişi, hareket yönü ve yörünge çizimi
-- Benzersiz `track_id` değerlerine göre toplam ve sınıf bazlı nesne sayımı
+- Tespit ve takip sonuçlarının CSV olarak kaydedilmesi
+- Yerel video dosyası ve doğrudan HTTP(S) MP4 URL desteği
 - Model karşılaştırma grafikleri ve doğrulama görselleri
 
 ## Kullanılan Teknolojiler
@@ -33,18 +35,16 @@ seçilmiştir.
 
 ## Veri Seti
 
-Projede VisDrone2019 Detection veri seti kullanılmıştır. Orijinal sınıflar
-proje için aşağıdaki şekilde sadeleştirilmiştir:
+Projede VisDrone2019 Detection veri seti kullanılmıştır. Güncel final veri seti
+2 sınıflıdır:
 
-| VisDrone sınıfı | YOLO ID | Proje sınıfı |
+| VisDrone sınıfı | YOLO ID | Final sınıf |
 | --- | ---: | --- |
-| pedestrian, people | 0 | Person |
-| car, van | 1 | Car |
-| truck | 2 | Truck |
-| bus | 3 | Bus |
+| pedestrian, people | 0 | person |
+| car, van, truck, bus, motor | 1 | vehicle |
 
-`bicycle`, `tricycle`, `awning-tricycle` ve `motor` sınıfları eğitimden
-çıkarılmıştır.
+`bicycle`, `tricycle` ve `awning-tricycle` sınıfları final 2-class veri
+setinden çıkarılmıştır.
 
 ### Veri Seti İstatistikleri
 
@@ -54,7 +54,15 @@ proje için aşağıdaki şekilde sadeleştirilmiştir:
 | Doğrulama | 548 |
 | Test | 1.610 |
 
-Dört sınıflı veri setinde toplam **392.854 nesne** bulunmaktadır.
+2-class veri setinde toplam **433.232 annotation** bulunmaktadır:
+
+| Sınıf | Annotation sayısı |
+| --- | ---: |
+| person | 147.747 |
+| vehicle | 285.485 |
+
+Önceki 4-class deney setinde `Person`, `Car`, `Truck` ve `Bus` sınıfları ayrı
+tutulmuştur. Bu sürüm karşılaştırma ve deney amaçlı korunmaktadır.
 
 ## Veri Ön İşleme
 
@@ -66,14 +74,7 @@ dönüştürülmüştür:
 - Hatalı annotation satırlarının temizlenmesi
 - Eğitim, doğrulama ve test klasörlerinin oluşturulması
 
-Dört sınıflı dönüştürme scripti:
-
-```text
-src/convert_visdrone_4class.py
-```
-
-Person ve tüm motorlu araçları tek bir `vehicle` sınıfında birleştiren iki
-sınıflı dataset sürümü de eklenmiştir:
+Final 2-class dönüştürme scripti:
 
 ```text
 src/convert_visdrone_2class.py
@@ -81,20 +82,29 @@ data_2class.yaml
 dataset/yolo_2class/
 ```
 
-Bu sürümde `pedestrian` ve `people` sınıfları `person`; `car`, `van`, `truck`,
-`bus` ve `motor` sınıfları `vehicle` olarak eşlenir. Bicycle, tricycle ve
-awning-tricycle sınıfları dahil edilmez.
+Önceki 4-class deney scripti:
+
+```text
+src/convert_visdrone_4class.py
+data_4class.yaml
+dataset/yolo_4class/
+```
 
 ## Model Karşılaştırma Sonuçları
 
-| Model | Epoch | Giriş boyutu | Precision | Recall | mAP50 | mAP50-95 |
+| Model | Epoch | Input Size | Precision | Recall | mAP50 | mAP50-95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | YOLOv8n | 50 | 640 | 0.634 | 0.433 | 0.470 | 0.279 |
 | YOLOv8s | 50 | 640 | 0.688 | 0.514 | 0.552 | 0.342 |
 | YOLO11n | 50 | 960 | 0.682 | 0.524 | 0.568 | 0.359 |
-| **YOLO11s** | **50** | **960** | **0.747** | **0.582** | **0.638** | **0.415** |
+| YOLO11s (4-class) | 50 | 960 | 0.747 | 0.582 | 0.638 | 0.415 |
+| **YOLO11s (2-class)** | **50** | **960** | **0.787** | **0.638** | **0.710** | **0.407** |
 
-Her modelin eğitim ve doğrulama görselleri aşağıdaki klasörlerde tutulur:
+- En yüksek mAP50 sonucu **YOLO11s 2-Class** modelinde elde edilmiştir.
+- Person/Vehicle yaklaşımı, Car/Truck/Bus ayrımına göre daha kararlı sonuç vermiştir.
+- Vehicle sınıfında **mAP50 = 0.818** elde edilmiştir.
+
+Eğitim ve doğrulama görselleri aşağıdaki klasörlerde tutulur:
 
 ```text
 outputs/v8n_4class_50/
@@ -108,34 +118,46 @@ normalize confusion matrix, sınıf dağılımı (`labels.jpg`) ve doğrulama ta
 örnekleri bulunur. Görseller model davranışını ve karşılaştırma sonuçlarını
 GitHub üzerinden incelemek amacıyla repoya dahil edilmiştir.
 
-## En İyi Model: YOLO11s
+## Final Model
 
-Karşılaştırma sonucunda en yüksek genel başarıyı **YOLO11s** modeli sağlamış
-ve projenin final modeli olarak seçilmiştir.
-
-Model dosyası:
+Güncel final model:
 
 ```text
-models/yolo11s_4class_960_best.pt
+models/yolo11s_2class_960_best.pt
 ```
+
+Model yapılandırması:
+
+```text
+YOLO11s 2-Class
+50 Epoch
+Input Size: 960
+Classes: person, vehicle
+```
+
+## En İyi Model: YOLO11s 2-Class
+
+Karşılaştırma sonucunda en yüksek mAP50 değerini **YOLO11s 2-Class** modeli
+sağlamış ve projenin final modeli olarak seçilmiştir.
 
 ### Genel Sonuçlar
 
 | Metrik | Sonuç |
 | --- | ---: |
-| Precision | 0.747 |
-| Recall | 0.582 |
-| mAP50 | 0.638 |
-| mAP50-95 | 0.415 |
+| Precision | 0.787 |
+| Recall | 0.638 |
+| mAP50 | 0.710 |
+| mAP50-95 | 0.407 |
 
 ### Sınıf Bazında Sonuçlar
 
 | Sınıf | Precision | Recall | mAP50 | mAP50-95 |
 | --- | ---: | ---: | ---: | ---: |
-| Person | 0.719 | 0.563 | 0.618 | 0.277 |
-| Car | 0.856 | 0.834 | 0.879 | 0.624 |
-| Truck | 0.601 | 0.407 | 0.450 | 0.310 |
-| Bus | 0.813 | 0.526 | 0.606 | 0.448 |
+| Person | 0.731 | 0.537 | 0.602 | 0.267 |
+| Vehicle | 0.842 | 0.740 | 0.818 | 0.547 |
+
+Önceki YOLO11s 4-class modeli başarılı bir deney olarak korunmaktadır; ancak
+final sistemde person/vehicle ayrımı kullanılmaktadır.
 
 ## Kurulum
 
@@ -166,163 +188,108 @@ işlem tamamlandıktan sonra silinir.
 YouTube sayfa bağlantıları desteklenmez. URL'nin doğrudan `.mp4` gibi bir
 video dosyası döndürmesi gerekir.
 
-### Komut Satırı Parametreleri
-
-| Parametre | Açıklama | Varsayılan |
-| --- | --- | --- |
-| `--source` | Yerel video yolu veya doğrudan HTTP(S) video URL'si | Zorunlu |
-| `--model` | YOLO model ağırlıklarının yolu | Final YOLO11s modeli |
-| `--conf` | Tespit güven eşiği | `0.25` |
-| `--imgsz` | Inference giriş boyutu | `960` |
-
-## Örnek Komutlar
-
-Yerel video:
+Örnek yerel video:
 
 ```powershell
-python src/inference_video.py --source data/sample_videos/test.mp4 --conf 0.35 --imgsz 960
+python src/inference_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960
 ```
 
-Doğrudan video URL'si:
+Örnek doğrudan MP4 URL:
 
 ```powershell
-python src/inference_video.py --source "https://example.com/video.mp4" --conf 0.35 --imgsz 960
+python src/inference_video.py --source "https://example.com/video.mp4" --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960
 ```
 
-Özel model dosyası:
-
-```powershell
-python src/inference_video.py --source video.mp4 --model models/yolo11s_4class_960_best.pt
-```
-
-## Çıktı Dosyaları
-
-İşlenmiş video kaynak dosyanın adına göre kaydedilir:
+Inference çıktıları:
 
 ```text
 outputs/videos/<video_adi>_detected.mp4
-```
-
-Tespit kayıtları şu dosyaya yazılır:
-
-```text
 outputs/logs/detections.csv
 ```
 
-CSV kolonları:
+Detection CSV kolonları:
 
 ```text
 frame,class,confidence,x1,y1,x2,y2,center_x,center_y
 ```
 
-`outputs/videos/` ve `outputs/logs/` çalışma zamanında otomatik oluşturulur ve
-üretilen büyük dosyalar Git tarafından takip edilmez.
-
 ## ByteTrack ile Nesne Takibi
 
-Takip pipeline'ı `src/track_video.py` scriptinde bulunur. YOLO11s tespitleri
-ByteTrack ile eşleştirilerek her nesneye bir `track_id` atanır. Her ID için
-geçmiş merkez noktaları tutulur, yörünge çizilir ve hareket yönü `left`,
-`right`, `up`, `down` veya `stable` olarak hesaplanır.
+Takip pipeline'ı:
+
+```text
+src/track_video.py
+```
+
+Final YOLO11s 2-Class tespitleri ByteTrack ile eşleştirilerek her nesneye bir
+`track_id` atanır. Her ID için geçmiş merkez noktaları tutulur, yörünge
+çizilir ve hareket yönü `left`, `right`, `up`, `down` veya `stable` olarak
+hesaplanır.
 
 Yerel video:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.40 --imgsz 960 --speed-threshold 2
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
 
 Doğrudan MP4 URL:
 
 ```powershell
-python src/track_video.py --source "https://example.com/video.mp4" --conf 0.35 --imgsz 960
+python src/track_video.py --source "https://example.com/video.mp4" --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
 
-Hareket hassasiyeti ve tutulan geçmiş uzunluğu isteğe bağlı olarak
-değiştirilebilir:
-
-```powershell
-python src/track_video.py --source video.mp4 --history-length 30 --direction-threshold 8
-```
-
-Takip çıktıları:
+Tracking çıktıları:
 
 ```text
 outputs/videos/<video_adi>_tracked.mp4
 outputs/logs/tracking.csv
 ```
 
-Takip CSV kolonları:
+Tracking CSV kolonları final 2-class mantığıyla şu bilgileri içerir:
 
 ```text
-frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,speed_px_per_sec,active_total,active_vehicle,active_person,active_car,active_truck,active_bus,unique_total,unique_vehicle,unique_person,unique_car,unique_truck,unique_bus
+frame,track_id,class,confidence,x1,y1,x2,y2,center_x,center_y,direction,speed_px_per_sec,active_total,active_vehicle,active_person,unique_total,unique_vehicle,unique_person
 ```
 
 ## Geliştirilmiş Nesne Sayımı
 
 Takip sistemi aktif ve benzersiz olmak üzere iki farklı sayım üretir.
 
-**Active count**, mevcut frame'de YOLO tarafından tespit edilen ve sınıfına
-ait confidence eşiğini geçen detection sayısıdır. Track ID veya minimum track
-ömrü şartı kullanmaz. Bu nedenle ekranda görünen mevcut nesne yoğunluğunu
-temsil eder. Ekrandaki ana sayaçlar active count değerleridir:
+**Active count**, mevcut frame'de YOLO tarafından tespit edilen ve sınıfına ait
+confidence eşiğini geçen detection sayısıdır. Track ID veya minimum track ömrü
+şartı kullanmaz. Final model için ana sayaçlar:
 
 - `active_person`
-- `active_car`
-- `active_truck`
-- `active_bus`
-- `active_vehicle = active_car + active_truck + active_bus`
-- `active_total`
+- `active_vehicle`
+- `active_total = active_person + active_vehicle`
 
 **Unique count**, video boyunca oluşan benzersiz `track_id` değerlerini
-kümülatif olarak tutar. Minimum track ömrü filtresi yalnızca bu sayımda
-kullanılır. Sınıf bazlı `unique_*` değerlerinin tamamı CSV dosyasına yazılır;
-ekranda ikincil bilgi olarak `Unique Tracks` gösterilir.
+kümülatif olarak tutar. Bu değer fiziksel nesnelerin kusursuz yeniden
+kimliklendirilmesi değil, benzersiz track ID sayısıdır. Final model için:
 
-ByteTrack bir nesneyi kaybedip daha sonra aynı nesneye yeni bir ID atarsa,
-unique count artabilir. Bu değer fiziksel nesnelerin kusursuz yeniden
-kimliklendirilmesi değil, benzersiz ve filtrelenmiş track ID sayısıdır.
+- `unique_person`
+- `unique_vehicle`
+- `unique_total = unique_person + unique_vehicle`
 
-Active detection sayımı için varsayılan sınıf eşikleri:
-
-- Person: `0.25`
-- Car: `0.35`
-- Truck: `0.55`
-- Bus: `0.40`
-
-Bu eşikler `--person-conf`, `--car-conf`, `--truck-conf` ve `--bus-conf`
-parametreleriyle değiştirilebilir:
-
-```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.25 --imgsz 960 --person-conf 0.25 --car-conf 0.35 --truck-conf 0.55 --bus-conf 0.40
-```
-
-Genel `--conf` değeri modelin counting aşamasına ulaşacak detection'larını
-belirler. Bu değer person eşiğinden yüksek seçilirse düşük confidence değerine
-sahip kişiler sınıf bazlı sayımdan önce elenebilir.
-
-Video üzerinde aşağıdaki bilgiler gerçek zamanlı gösterilir:
+Video üzerinde örnek panel:
 
 ```text
 Active Total: 32
 Active Vehicle: 27
 Active Person: 5
-Active Car: 21
-Active Truck: 4
-Active Bus: 2
 Unique Tracks: 46
 FPS: 24.8
 ```
 
-Active ve unique sınıf sayımları her takip satırının sonuna eklenen CSV
-kolonlarında saklanır. Active değerler detection tabanlı, unique değerler
-track ID tabanlıdır.
+4-class deney sürümünde `active_car`, `active_truck`, `active_bus` gibi alt
+araç kırılımları kullanılmıştır; final 2-class sistemde bu kırılımlar
+`active_vehicle` altında birleştirilmiştir.
 
 ## Speed Estimation
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
 tahmini yapılır. Bounding box titreşimini azaltmak için merkez koordinatlarına
-iki noktalık moving average uygulanır. Küçük pencere hareketi yumuşatırken
-gerçek hareketin gecikmesini sınırlı tutar.
+iki noktalık moving average uygulanır.
 
 Hız hesabı tek bir frame farkına göre yapılmaz. Track en az 10 merkez gözlemine
 ulaştığında son 10 yumuşatılmış noktanın ilk ve son merkezi arasındaki Öklid
@@ -337,23 +304,10 @@ speed_px_per_sec = pixel_distance / time_difference
 
 İlk ve son merkez arasındaki yer değiştirme varsayılan olarak 2 pikselden
 küçükse nesne `stable` kabul edilir ve hız `0.0 px/s` olarak yazılır.
-Yer değiştirme eşik veya üzerindeyse yön ve hız birlikte hesaplanır; yön
-sonucu hızı ayrıca sıfırlamaz. Eşik komut satırından değiştirilebilir:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --conf 0.40 --imgsz 960 --speed-threshold 2
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
-
-10 gözlemden kısa track'lerde hız `0.0 px/s` olarak gösterilir.
-
-Video üzerindeki nesne etiketi sınıf, ID, yön ve hızı birlikte gösterir:
-
-```text
-ID 12 | Car 0.87 | right | 42.3 px/s
-```
-
-Hız değeri CSV dosyasındaki `speed_px_per_sec` kolonuna da yazılır. Stable
-nesnelerde bu kolon `0` değerini taşır.
 
 Bu hız değeri gerçek km/h değildir. Piksel tabanlı göreli ve yaklaşık bir
 hızdır; kamera hareketi, perspektif, irtifa ve görüntü ölçeğinden etkilenir.
@@ -366,7 +320,7 @@ UAV_Object_Detection/
 ├── data/
 ├── dataset/
 ├── models/
-│   └── yolo11s_4class_960_best.pt
+│   └── yolo11s_2class_960_best.pt
 ├── outputs/
 │   ├── logs/
 │   ├── videos/
@@ -375,12 +329,12 @@ UAV_Object_Detection/
 │   ├── yolo11n_4class_960/
 │   └── yolo11s_4class_960/
 ├── src/
-│   ├── convert_visdrone_4class.py
 │   ├── convert_visdrone_2class.py
+│   ├── convert_visdrone_4class.py
 │   ├── inference_video.py
 │   └── track_video.py
-├── data_4class.yaml
 ├── data_2class.yaml
+├── data_4class.yaml
 ├── requirements.txt
 └── README.md
 ```
@@ -390,15 +344,17 @@ UAV_Object_Detection/
 - ByteTrack parametrelerinin farklı sahneler için optimize edilmesi
 - Yeniden kimliklendirme ile uzun süreli nesne ID takibi
 - Kamera hareketi telafisi
-- Piksel ve gerçek dünya tabanlı hız tahmini
+- Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
 - Canlı kamera ve RTSP akış desteği
 - Tespit ve takip sonuçlarını gösteren web dashboard
 
 ## Sonuç
 
-YOLOv8n, YOLOv8s, YOLO11n ve YOLO11s modellerinin karşılaştırılması sonucunda
-YOLO11s, `0.638 mAP50` ve `0.415 mAP50-95` ile en başarılı model olmuştur.
-Tamamlanan video inference pipeline sayesinde final model yerel veya doğrudan
-URL ile sağlanan videolarda çalıştırılabilmekte; görsel ve yapısal tespit
-çıktıları video ve CSV formatında kaydedilebilmektedir.
+Şu ana kadarki en başarılı model **YOLO11s 2-Class** modelidir:
+
+- mAP50 = 0.710
+- mAP50-95 = 0.407
+
+Bu model proje içerisinde nesne tespiti, ByteTrack tabanlı takip, aktif nesne
+sayımı, yön analizi ve piksel tabanlı hız tahmini için kullanılmaktadır.
