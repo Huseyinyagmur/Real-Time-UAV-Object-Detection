@@ -561,12 +561,12 @@ def draw_statistics(
     font = cv2.FONT_HERSHEY_SIMPLEX
     frame_height, frame_width = frame.shape[:2]
     scale_factor = max(frame_width / 1920.0, 1.0)
-    font_scale = 0.9 * scale_factor
+    font_scale = 0.74 * scale_factor
     thickness = max(2, round(2 * scale_factor))
-    line_height = round(42 * scale_factor)
-    padding = round(18 * scale_factor)
-    origin_x = round(24 * scale_factor)
-    origin_y = round(24 * scale_factor)
+    line_height = round(34 * scale_factor)
+    padding = round(14 * scale_factor)
+    origin_x = round(20 * scale_factor)
+    origin_y = round(20 * scale_factor)
     text_width = max(
         cv2.getTextSize(line, font, font_scale, thickness)[0][0]
         for line in lines
@@ -609,21 +609,40 @@ def draw_statistics(
 def draw_counting_line(
     frame: object,
     line_counter: LineCrossingCounter,
+    line_thickness: int,
 ) -> None:
     """Draw the configured virtual counting line on a frame."""
     frame_height, frame_width = frame.shape[:2]
     coordinate = line_counter.line_coordinate(frame_width, frame_height)
     color = (0, 255, 255)
-    thickness = max(3, round(frame_width / 640))
+    thickness = max(1, line_thickness)
+    scale_factor = max(frame_width / 1920.0, 1.0)
+    label_scale = 0.55 * scale_factor
+    label_thickness = max(1, round(1 * scale_factor))
 
     if line_counter.orientation == "horizontal":
         start_point = (0, coordinate)
         end_point = (frame_width, coordinate)
-        text_point = (20, max(35, coordinate - 12))
+        text_point = (
+            round(18 * scale_factor),
+            max(round(24 * scale_factor), coordinate - round(8 * scale_factor)),
+        )
     else:
         start_point = (coordinate, 0)
         end_point = (coordinate, frame_height)
-        text_point = (min(frame_width - 240, coordinate + 12), 35)
+        text_width = cv2.getTextSize(
+            "Counting Line",
+            cv2.FONT_HERSHEY_SIMPLEX,
+            label_scale,
+            label_thickness,
+        )[0][0]
+        text_point = (
+            min(
+                frame_width - text_width - round(12 * scale_factor),
+                coordinate + round(8 * scale_factor),
+            ),
+            round(26 * scale_factor),
+        )
 
     cv2.line(frame, start_point, end_point, color, thickness, cv2.LINE_AA)
     cv2.putText(
@@ -631,9 +650,9 @@ def draw_counting_line(
         "Counting Line",
         text_point,
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
+        label_scale,
         color,
-        2,
+        label_thickness,
         cv2.LINE_AA,
     )
 
@@ -696,6 +715,7 @@ def process_video(
     show_speed: bool,
     line_orientation: str,
     line_position: float,
+    line_thickness: int,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
     model_path = validate_file(model_path, "Model")
@@ -789,7 +809,11 @@ def process_video(
                             show_direction=show_direction,
                             show_speed=show_speed,
                         )
-                    draw_counting_line(frame, line_counter)
+                    draw_counting_line(
+                        frame,
+                        line_counter,
+                        line_thickness=line_thickness,
+                    )
                     write_csv_rows(
                         csv_writer,
                         processed_frames,
@@ -930,6 +954,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "(default: 0.5)."
         ),
     )
+    parser.add_argument(
+        "--line-thickness",
+        type=int,
+        default=2,
+        help="Counting line thickness in pixels (default: 2).",
+    )
     return parser
 
 
@@ -970,6 +1000,9 @@ def main() -> int:
     if not 0.0 <= args.line_position <= 1.0:
         LOGGER.error("--line-position must be between 0 and 1.")
         return 2
+    if args.line_thickness < 1:
+        LOGGER.error("--line-thickness must be at least 1.")
+        return 2
     minimum_class_confidence = min(class_thresholds.values())
     if args.conf > minimum_class_confidence:
         LOGGER.warning(
@@ -998,6 +1031,7 @@ def main() -> int:
             show_speed=args.show_speed,
             line_orientation=args.line_orientation,
             line_position=args.line_position,
+            line_thickness=args.line_thickness,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)

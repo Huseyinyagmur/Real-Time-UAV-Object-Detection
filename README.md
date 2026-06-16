@@ -313,6 +313,7 @@ Varsayılan çizgi yataydır ve frame yüksekliğinin %50 konumuna çizilir.
 - `--line-orientation horizontal`
 - `--line-orientation vertical`
 - `--line-position 0.5`
+- `--line-thickness 2`
 
 Horizontal çizgide yönlü sayaçlar:
 
@@ -332,16 +333,25 @@ Aynı `track_id` aynı yön için yalnızca bir kez sayılır. Örneğin bir nes
 horizontal çizgiyi `down` yönünde geçtikten sonra aynı ID ile tekrar `down`
 yönünde sayılmaz; ancak ters yönde geçerse ayrı yön olarak sayılabilir.
 
+Line count yalnızca takip edilen nesnenin merkez noktası çizginin bir
+tarafından diğer tarafına geçtiğinde artar. Çizgiyi geçmeyen nesneler aktif
+nesne sayımında görünür, ancak line crossing değerini artırmaz. Bu nedenle
+çizgi konumu sahneye göre ayarlanmalıdır.
+
+Horizontal line y ekseninde, vertical line x ekseninde çalışır. `--line-position
+0.5` görüntünün orta noktasıdır. Yolun ve akışın konumuna göre `0.4`, `0.6`
+veya `0.7` gibi değerler denenebilir.
+
 Horizontal line örneği:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation horizontal --line-position 0.5
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation horizontal --line-position 0.5 --line-thickness 2
 ```
 
 Vertical line örneği:
 
 ```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.5
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.35 --line-thickness 2
 ```
 
 Panelde çizgi yönüne göre line crossing bilgileri gösterilir:
@@ -357,8 +367,9 @@ Line Person Down: 1
 FPS: 24.8
 ```
 
-Video üzerinde çizgi belirgin sarı renkle çizilir ve yanında `Counting Line`
-etiketi gösterilir. Line crossing sayaçları CSV dosyasına da yazılır.
+Video üzerinde çizgi sarı renkle, varsayılan olarak 2 piksel kalınlıkta
+çizilir ve yanında küçük `Counting Line` etiketi gösterilir. Line crossing
+sayaçları CSV dosyasına da yazılır.
 
 ## Speed Estimation
 
