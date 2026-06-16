@@ -12,6 +12,7 @@ models/*
 !models/.gitkeep
 
 # Runtime inference outputs
+outputs/heatmaps/
 outputs/videos/
 outputs/logs/
 

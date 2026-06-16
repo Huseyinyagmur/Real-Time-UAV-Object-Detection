@@ -18,6 +18,7 @@ olarak **YOLO11s 2-Class** seçilmiştir.
 - Hareket yönü ve yörünge çizimi
 - Piksel tabanlı göreli hız tahmini
 - Line Crossing Counter ile yönlü nesne geçiş sayımı
+- Traffic Heatmap ile yoğunluk haritası üretimi
 - Anlık inference FPS değerinin görüntülenmesi
 - İşlenmiş videonun MP4 formatında kaydedilmesi
 - Tespit ve takip sonuçlarının CSV olarak kaydedilmesi
@@ -413,6 +414,58 @@ Demo komutu:
 python src/track_video.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.45 --line-thickness 2
 ```
 
+## Traffic Heatmap
+
+Traffic Heatmap özelliği, video boyunca tespit edilen nesnelerin merkez
+noktalarını bir yoğunluk matrisine işler. Böylece person veya vehicle
+nesnelerinin sahnede en yoğun geçtiği bölgeler görselleştirilebilir.
+
+Kırmızı bölgeler yüksek yoğunluğu, mavi bölgeler düşük yoğunluğu temsil eder.
+Bu özellik traffic flow analizi, surveillance senaryoları ve UAV analytics
+çalışmaları için kullanılabilir.
+
+Heatmap pipeline:
+
+```text
+src/generate_heatmap.py
+```
+
+Üretilen çıktılar:
+
+```text
+outputs/heatmaps/<video_adi>_heatmap.png
+outputs/heatmaps/<video_adi>_overlay.png
+outputs/logs/<video_adi>_heatmap_points.csv
+```
+
+CSV kolonları:
+
+```text
+frame,class,confidence,center_x,center_y
+```
+
+Vehicle heatmap:
+
+```powershell
+python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter vehicle --alpha 0.45
+```
+
+Person heatmap:
+
+```powershell
+python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --class-filter person --alpha 0.45
+```
+
+All classes:
+
+```powershell
+python src/generate_heatmap.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --class-filter all --alpha 0.45
+```
+
+`--sample-rate` parametresiyle her kaç frame'de bir analiz yapılacağı
+ayarlanabilir. Örneğin `--sample-rate 5`, her 5 frame'den birini işler ve uzun
+videolarda daha hızlı özet heatmap üretir.
+
 ## Speed Estimation
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
@@ -454,6 +507,7 @@ UAV_Object_Detection/
 ├── models/
 │   └── yolo11s_2class_960_best.pt
 ├── outputs/
+│   ├── heatmaps/
 │   ├── logs/
 │   ├── videos/
 │   ├── v8n_4class_50/
@@ -463,6 +517,7 @@ UAV_Object_Detection/
 ├── src/
 │   ├── convert_visdrone_2class.py
 │   ├── convert_visdrone_4class.py
+│   ├── generate_heatmap.py
 │   ├── inference_video.py
 │   └── track_video.py
 ├── data_2class.yaml
@@ -471,9 +526,10 @@ UAV_Object_Detection/
 └── README.md
 ```
 
-`outputs/logs/` ve `outputs/videos/` klasörleri çalışma sırasında otomatik
-oluşturulur ve GitHub deposuna dahil edilmez. Eğitim sonuç görselleri ise
-benchmark ve model karşılaştırması amacıyla repoda tutulur.
+`outputs/heatmaps/`, `outputs/logs/` ve `outputs/videos/` klasörleri çalışma
+sırasında otomatik oluşturulur. Runtime çıktı dosyaları GitHub deposuna dahil
+edilmez; eğitim sonuç görselleri ise benchmark ve model karşılaştırması
+amacıyla repoda tutulur.
 
 ## Gelecek Çalışmalar
 
@@ -483,7 +539,7 @@ benchmark ve model karşılaştırması amacıyla repoda tutulur.
 - Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
 - ROI (Region of Interest) sayımı
-- Trafik yoğunluğu heatmap üretimi
+- ROI bazlı heatmap analizi
 - Çoklu line crossing bölgeleri
 - Canlı kamera ve RTSP akış desteği
 - Streamlit tabanlı web dashboard
