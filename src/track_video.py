@@ -1,4 +1,4 @@
-"""Track four object classes in a video with YOLO11s and ByteTrack."""
+"""Track person and vehicle classes in a video with YOLO11s and ByteTrack."""
 
 from __future__ import annotations
 
@@ -15,9 +15,6 @@ import cv2
 from ultralytics import YOLO
 
 from inference_video import (
-    CLASS_COLORS,
-    CLASS_NAMES,
-    DEFAULT_MODEL_PATH,
     DEFAULT_VIDEO_DIR,
     InferenceError,
     create_video_writer,
@@ -30,7 +27,18 @@ from inference_video import (
 
 LOGGER = logging.getLogger("video_tracking")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "yolo11s_2class_960_best.pt"
 DEFAULT_CSV_PATH = PROJECT_ROOT / "outputs" / "logs" / "tracking.csv"
+
+CLASS_NAMES = {
+    0: "Person",
+    1: "Vehicle",
+}
+
+CLASS_COLORS = {
+    0: (0, 255, 0),
+    1: (255, 144, 30),
+}
 
 CSV_COLUMNS = (
     "frame",
@@ -48,15 +56,9 @@ CSV_COLUMNS = (
     "active_total",
     "active_vehicle",
     "active_person",
-    "active_car",
-    "active_truck",
-    "active_bus",
     "unique_total",
     "unique_vehicle",
     "unique_person",
-    "unique_car",
-    "unique_truck",
-    "unique_bus",
 )
 
 
@@ -85,15 +87,9 @@ class CountSnapshot:
     active_total: int
     active_vehicle: int
     active_person: int
-    active_car: int
-    active_truck: int
-    active_bus: int
     unique_total: int
     unique_vehicle: int
     unique_person: int
-    unique_car: int
-    unique_truck: int
-    unique_bus: int
 
 
 @dataclass(frozen=True)
@@ -101,17 +97,13 @@ class ClassConfidenceThresholds:
     """Per-class confidence thresholds used by the counting system."""
 
     person: float = 0.25
-    car: float = 0.35
-    truck: float = 0.55
-    bus: float = 0.40
+    vehicle: float = 0.35
 
     def for_class(self, class_id: int) -> float:
         """Return the configured threshold for a model class ID."""
         return {
             0: self.person,
-            1: self.car,
-            2: self.truck,
-            3: self.bus,
+            1: self.vehicle,
         }[class_id]
 
 
@@ -174,29 +166,15 @@ class ObjectCounter:
                 self.counted_tracks[track_id] = tracked_object.class_id
                 self.class_counts[tracked_object.class_id] += 1
 
-        active_vehicle = (
-            active_class_counts[1]
-            + active_class_counts[2]
-            + active_class_counts[3]
-        )
-        unique_vehicle = (
-            self.class_counts[1]
-            + self.class_counts[2]
-            + self.class_counts[3]
-        )
+        active_vehicle = active_class_counts[1]
+        unique_vehicle = self.class_counts[1]
         return CountSnapshot(
             active_total=sum(active_class_counts.values()),
             active_vehicle=active_vehicle,
             active_person=active_class_counts[0],
-            active_car=active_class_counts[1],
-            active_truck=active_class_counts[2],
-            active_bus=active_class_counts[3],
             unique_total=len(self.counted_tracks),
             unique_vehicle=unique_vehicle,
             unique_person=self.class_counts[0],
-            unique_car=self.class_counts[1],
-            unique_truck=self.class_counts[2],
-            unique_bus=self.class_counts[3],
         )
 
 
@@ -425,9 +403,6 @@ def draw_statistics(
         f"Active Total: {counts.active_total}",
         f"Active Vehicle: {counts.active_vehicle}",
         f"Active Person: {counts.active_person}",
-        f"Active Car: {counts.active_car}",
-        f"Active Truck: {counts.active_truck}",
-        f"Active Bus: {counts.active_bus}",
         f"Unique Tracks: {counts.unique_total}",
         f"FPS: {fps:.1f}",
     )
@@ -499,15 +474,9 @@ def write_csv_rows(
                 "active_total": counts.active_total,
                 "active_vehicle": counts.active_vehicle,
                 "active_person": counts.active_person,
-                "active_car": counts.active_car,
-                "active_truck": counts.active_truck,
-                "active_bus": counts.active_bus,
                 "unique_total": counts.unique_total,
                 "unique_vehicle": counts.unique_vehicle,
                 "unique_person": counts.unique_person,
-                "unique_car": counts.unique_car,
-                "unique_truck": counts.unique_truck,
-                "unique_bus": counts.unique_bus,
             }
         )
 
@@ -638,7 +607,7 @@ def process_video(
 def build_argument_parser() -> argparse.ArgumentParser:
     """Create the tracking command-line interface."""
     parser = argparse.ArgumentParser(
-        description="Track four object classes with YOLO11s and ByteTrack."
+        description="Track person and vehicle classes with YOLO11s and ByteTrack."
     )
     parser.add_argument(
         "--source",
@@ -691,22 +660,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Person counting confidence threshold (default: 0.25).",
     )
     parser.add_argument(
-        "--car-conf",
+        "--vehicle-conf",
         type=float,
         default=0.35,
-        help="Car counting confidence threshold (default: 0.35).",
-    )
-    parser.add_argument(
-        "--truck-conf",
-        type=float,
-        default=0.55,
-        help="Truck counting confidence threshold (default: 0.55).",
-    )
-    parser.add_argument(
-        "--bus-conf",
-        type=float,
-        default=0.40,
-        help="Bus counting confidence threshold (default: 0.40).",
+        help="Vehicle counting confidence threshold (default: 0.35).",
     )
     parser.add_argument(
         "--min-track-frames",
@@ -742,9 +699,7 @@ def main() -> int:
         return 2
     class_thresholds = {
         "--person-conf": args.person_conf,
-        "--car-conf": args.car_conf,
-        "--truck-conf": args.truck_conf,
-        "--bus-conf": args.bus_conf,
+        "--vehicle-conf": args.vehicle_conf,
     }
     for argument, threshold in class_thresholds.items():
         if not 0.0 <= threshold <= 1.0:
@@ -773,9 +728,7 @@ def main() -> int:
             speed_threshold=args.speed_threshold,
             thresholds=ClassConfidenceThresholds(
                 person=args.person_conf,
-                car=args.car_conf,
-                truck=args.truck_conf,
-                bus=args.bus_conf,
+                vehicle=args.vehicle_conf,
             ),
             min_track_frames=args.min_track_frames,
         )
