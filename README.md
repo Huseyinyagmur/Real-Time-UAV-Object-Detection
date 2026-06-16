@@ -232,6 +232,21 @@ Yerel video:
 python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2
 ```
 
+Varsayılan demo görünümü sade ve sunuma uygundur. Panelde yalnızca aktif toplam,
+aktif vehicle, aktif person ve FPS gösterilir. Kutu etiketlerinde de yalnızca
+ID, sınıf ve confidence yer alır:
+
+```text
+ID 12 | Vehicle 0.87
+```
+
+Detaylı debug/demo görünümü için yön, hız ve unique track sayısı ayrıca
+açılabilir:
+
+```powershell
+python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --show-direction --show-speed --show-unique
+```
+
 Doğrudan MP4 URL:
 
 ```powershell
@@ -277,9 +292,11 @@ Video üzerinde örnek panel:
 Active Total: 32
 Active Vehicle: 27
 Active Person: 5
-Unique Tracks: 46
 FPS: 24.8
 ```
+
+`Unique Tracks` değeri CSV içinde kalır, ancak varsayılan video panelinde
+gösterilmez. Panelde görmek için `--show-unique` kullanılabilir.
 
 4-class deney sürümünde `active_car`, `active_truck`, `active_bus` gibi alt
 araç kırılımları kullanılmıştır; final 2-class sistemde bu kırılımlar
@@ -305,8 +322,12 @@ speed_px_per_sec = pixel_distance / time_difference
 İlk ve son merkez arasındaki yer değiştirme varsayılan olarak 2 pikselden
 küçükse nesne `stable` kabul edilir ve hız `0.0 px/s` olarak yazılır.
 
-```powershell
-python src/track_video.py --source data/sample_videos/test.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2
+Video üzerindeki hız bilgisi varsayılan olarak gizlidir. Etikette görmek için
+`--show-speed` kullanılmalıdır. Yön bilgisi de aynı şekilde `--show-direction`
+argümanı verilirse gösterilir:
+
+```text
+ID 12 | Vehicle 0.87 | right | 42.3 px/s
 ```
 
 Bu hız değeri gerçek km/h değildir. Piksel tabanlı göreli ve yaklaşık bir

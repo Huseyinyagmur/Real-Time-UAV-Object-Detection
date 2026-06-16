@@ -339,14 +339,20 @@ def draw_track(
     frame: object,
     tracked_object: TrackedObject,
     history: TrackHistory,
+    show_direction: bool,
+    show_speed: bool,
 ) -> None:
     """Draw a tracked object, its center, direction, and trajectory."""
     color = CLASS_COLORS[tracked_object.class_id]
-    label = (
-        f"ID {tracked_object.track_id} | {tracked_object.class_name} "
-        f"{tracked_object.confidence:.2f} | {tracked_object.direction} | "
-        f"{tracked_object.speed_px_per_sec:.1f} px/s"
-    )
+    label_parts = [
+        f"ID {tracked_object.track_id}",
+        f"{tracked_object.class_name} {tracked_object.confidence:.2f}",
+    ]
+    if show_direction:
+        label_parts.append(tracked_object.direction)
+    if show_speed:
+        label_parts.append(f"{tracked_object.speed_px_per_sec:.1f} px/s")
+    label = " | ".join(label_parts)
 
     cv2.rectangle(
         frame,
@@ -363,7 +369,7 @@ def draw_track(
         -1,
     )
 
-    points = history.get_points(tracked_object.track_id)
+    points = history.get_points(tracked_object.track_id)[-20:]
     for start, end in zip(points, points[1:]):
         cv2.line(frame, start, end, color, 2, cv2.LINE_AA)
 
@@ -397,20 +403,27 @@ def draw_statistics(
     frame: object,
     counts: CountSnapshot,
     fps: float,
+    show_unique: bool,
 ) -> None:
     """Draw active counts prominently and cumulative unique total secondarily."""
-    lines = (
+    lines = [
         f"Active Total: {counts.active_total}",
         f"Active Vehicle: {counts.active_vehicle}",
         f"Active Person: {counts.active_person}",
-        f"Unique Tracks: {counts.unique_total}",
         f"FPS: {fps:.1f}",
-    )
+    ]
+    if show_unique:
+        lines.insert(-1, f"Unique Tracks: {counts.unique_total}")
+
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.65
-    thickness = 2
-    line_height = 27
-    padding = 10
+    frame_height, frame_width = frame.shape[:2]
+    scale_factor = max(frame_width / 1920.0, 1.0)
+    font_scale = 0.9 * scale_factor
+    thickness = max(2, round(2 * scale_factor))
+    line_height = round(42 * scale_factor)
+    padding = round(18 * scale_factor)
+    origin_x = round(24 * scale_factor)
+    origin_y = round(24 * scale_factor)
     text_width = max(
         cv2.getTextSize(line, font, font_scale, thickness)[0][0]
         for line in lines
@@ -421,12 +434,12 @@ def draw_statistics(
     overlay = frame.copy()
     cv2.rectangle(
         overlay,
-        (10, 10),
-        (10 + panel_width, 10 + panel_height),
+        (origin_x, origin_y),
+        (origin_x + panel_width, origin_y + panel_height),
         (0, 0, 0),
         -1,
     )
-    cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+    cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
 
     for index, line in enumerate(lines):
         if line.startswith("FPS"):
@@ -438,7 +451,10 @@ def draw_statistics(
         cv2.putText(
             frame,
             line,
-            (10 + padding, 10 + padding + ((index + 1) * line_height) - 7),
+            (
+                origin_x + padding,
+                origin_y + padding + ((index + 1) * line_height) - 9,
+            ),
             font,
             font_scale,
             color,
@@ -491,6 +507,9 @@ def process_video(
     speed_threshold: float,
     thresholds: ClassConfidenceThresholds,
     min_track_frames: int,
+    show_unique: bool,
+    show_direction: bool,
+    show_speed: bool,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
     model_path = validate_file(model_path, "Model")
@@ -568,7 +587,13 @@ def process_video(
                     counts = counter.update(results[0], tracked_objects)
 
                     for tracked_object in tracked_objects:
-                        draw_track(frame, tracked_object, history)
+                        draw_track(
+                            frame,
+                            tracked_object,
+                            history,
+                            show_direction=show_direction,
+                            show_speed=show_speed,
+                        )
                     write_csv_rows(
                         csv_writer,
                         processed_frames,
@@ -579,7 +604,12 @@ def process_video(
 
                     elapsed = time.perf_counter() - frame_started_at
                     instantaneous_fps = 1.0 / elapsed if elapsed > 0 else 0.0
-                    draw_statistics(frame, counts, instantaneous_fps)
+                    draw_statistics(
+                        frame,
+                        counts,
+                        instantaneous_fps,
+                        show_unique=show_unique,
+                    )
                     writer.write(frame)
 
                     if processed_frames % 100 == 0:
@@ -671,6 +701,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=5,
         help="Frames required before a track can be counted (default: 5).",
     )
+    parser.add_argument(
+        "--show-unique",
+        action="store_true",
+        help="Show cumulative unique track count on the video panel.",
+    )
+    parser.add_argument(
+        "--show-direction",
+        action="store_true",
+        help="Show movement direction in each object label.",
+    )
+    parser.add_argument(
+        "--show-speed",
+        action="store_true",
+        help="Show pixel speed in each object label.",
+    )
     return parser
 
 
@@ -731,6 +776,9 @@ def main() -> int:
                 vehicle=args.vehicle_conf,
             ),
             min_track_frames=args.min_track_frames,
+            show_unique=args.show_unique,
+            show_direction=args.show_direction,
+            show_speed=args.show_speed,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
