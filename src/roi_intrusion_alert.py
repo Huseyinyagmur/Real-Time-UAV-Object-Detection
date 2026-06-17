@@ -45,11 +45,11 @@ CSV_COLUMNS = (
     "frame",
     "track_id",
     "class",
+    "event",
     "confidence",
     "center_x",
     "center_y",
-    "in_roi",
-    "event",
+    "roi_name",
     "snapshot_path",
 )
 
@@ -96,6 +96,14 @@ class IntrusionEvent:
     tracked_object: TrackedObject
     event: str
     snapshot_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class AlertMessage:
+    """A visual alert message kept on screen for several frames."""
+
+    text: str
+    expires_at_frame: int
 
 
 class TrackHistory:
@@ -189,9 +197,11 @@ class TrackHistory:
 class IntrusionMonitor:
     """Detect one-time intrusion alerts and exit events for ROI tracks."""
 
-    def __init__(self) -> None:
+    def __init__(self, ignore_initial_inside: bool = False) -> None:
+        self.ignore_initial_inside = ignore_initial_inside
         self.previous_roi_state: dict[int, bool] = {}
         self.alerted_track_ids: set[int] = set()
+        self.seen_track_ids: set[int] = set()
 
     def update(
         self,
@@ -203,8 +213,18 @@ class IntrusionMonitor:
 
         for tracked_object in tracked_objects:
             track_id = tracked_object.track_id
+            first_observation = track_id not in self.seen_track_ids
+            self.seen_track_ids.add(track_id)
             previous_state = self.previous_roi_state.get(track_id, False)
             current_state = tracked_object.in_roi
+
+            if (
+                self.ignore_initial_inside
+                and first_observation
+                and current_state
+            ):
+                self.previous_roi_state[track_id] = current_state
+                continue
 
             if (
                 not previous_state
@@ -264,6 +284,16 @@ def parse_roi(value: str) -> tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
+def parse_bool(value: str) -> bool:
+    """Parse flexible true/false command-line values."""
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("Expected true or false.")
+
+
 def build_roi(
     roi_values: tuple[int, int, int, int] | None,
     roi_name: str,
@@ -273,10 +303,10 @@ def build_roi(
     """Return a user-defined ROI or the default center rectangle."""
     if roi_values is None:
         return ROI(
-            x1=round(frame_width * 0.25),
-            y1=round(frame_height * 0.25),
-            x2=round(frame_width * 0.75),
-            y2=round(frame_height * 0.75),
+            x1=round(frame_width * 0.35),
+            y1=round(frame_height * 0.35),
+            x2=round(frame_width * 0.65),
+            y2=round(frame_height * 0.65),
             name=roi_name,
         )
 
@@ -379,6 +409,7 @@ def draw_track(
     color = ALERT_COLOR if tracked_object.in_roi else CLASS_COLORS[
         tracked_object.class_id
     ]
+    thickness = 3 if tracked_object.in_roi else 1
     label_parts = [
         f"ID {tracked_object.track_id}",
         f"{tracked_object.class_name} {tracked_object.confidence:.2f}",
@@ -394,7 +425,7 @@ def draw_track(
         (tracked_object.x1, tracked_object.y1),
         (tracked_object.x2, tracked_object.y2),
         color,
-        2,
+        thickness,
     )
     cv2.circle(
         frame,
@@ -437,20 +468,16 @@ def draw_track(
 
 def draw_alert_banner(
     frame: object,
-    active_alerts: list[IntrusionEvent],
+    alert_message: AlertMessage | None,
+    frame_number: int,
 ) -> None:
-    """Draw an alert banner when intrusion events happen in this frame."""
-    if not active_alerts:
+    """Draw an alert banner while the latest alert is active."""
+    if alert_message is None or frame_number > alert_message.expires_at_frame:
         return
 
-    first_alert = active_alerts[0]
-    message = (
-        f"INTRUSION ALERT | ID {first_alert.tracked_object.track_id} | "
-        f"{first_alert.tracked_object.class_name}"
-    )
     frame_height, frame_width = frame.shape[:2]
     scale_factor = max(frame_width / 1920.0, 1.0)
-    banner_height = round(58 * scale_factor)
+    banner_height = round(72 * scale_factor)
     overlay = frame.copy()
     cv2.rectangle(
         overlay,
@@ -462,12 +489,12 @@ def draw_alert_banner(
     cv2.addWeighted(overlay, 0.78, frame, 0.22, 0, frame)
     cv2.putText(
         frame,
-        message,
-        (round(24 * scale_factor), round(39 * scale_factor)),
+        alert_message.text,
+        (round(24 * scale_factor), round(47 * scale_factor)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.95 * scale_factor,
+        1.0 * scale_factor,
         (255, 255, 255),
-        max(2, round(2 * scale_factor)),
+        max(3, round(3 * scale_factor)),
         cv2.LINE_AA,
     )
 
@@ -534,9 +561,13 @@ def save_alert_snapshot(
     event: IntrusionEvent,
 ) -> Path:
     """Save a full-frame snapshot for an intrusion event."""
+    class_slug = event.tracked_object.class_name.lower()
     snapshot_path = (
         alert_dir
-        / f"{source_stem}_frame{event.frame_number:06d}_track{event.tracked_object.track_id}_intrusion.jpg"
+        / (
+            f"{source_stem}_frame{event.frame_number:06d}_"
+            f"{class_slug}_id{event.tracked_object.track_id}_enter.jpg"
+        )
     )
     if not cv2.imwrite(str(snapshot_path), frame):
         raise InferenceError(f"Alert snapshot could not be saved: {snapshot_path}")
@@ -546,6 +577,7 @@ def save_alert_snapshot(
 def write_event_row(
     csv_writer: csv.DictWriter,
     event: IntrusionEvent,
+    roi_name: str,
 ) -> None:
     """Write one intrusion enter or exit event to CSV."""
     tracked_object = event.tracked_object
@@ -554,11 +586,11 @@ def write_event_row(
             "frame": event.frame_number,
             "track_id": tracked_object.track_id,
             "class": tracked_object.class_name,
+            "event": event.event,
             "confidence": f"{tracked_object.confidence:.6f}",
             "center_x": tracked_object.center_x,
             "center_y": tracked_object.center_y,
-            "in_roi": tracked_object.in_roi,
-            "event": event.event,
+            "roi_name": roi_name,
             "snapshot_path": str(event.snapshot_path or ""),
         }
     )
@@ -575,6 +607,9 @@ def process_video(
     show_direction: bool,
     show_speed: bool,
     play_sound: bool,
+    alert_display_frames: int,
+    ignore_initial_inside: bool,
+    save_snapshots: bool,
 ) -> tuple[Path, Path, Path, int, int]:
     """Run ROI intrusion monitoring and return output paths plus totals."""
     model_path = validate_file(model_path, "Model")
@@ -594,9 +629,10 @@ def process_video(
         capture = open_video(prepared_source.path)
         writer: cv2.VideoWriter | None = None
         history = TrackHistory()
-        monitor = IntrusionMonitor()
+        monitor = IntrusionMonitor(ignore_initial_inside=ignore_initial_inside)
         processed_frames = 0
         alert_count = 0
+        active_alert_message: AlertMessage | None = None
 
         try:
             width, height, source_fps, frame_count = get_video_properties(capture)
@@ -663,32 +699,52 @@ def process_video(
                             show_speed=show_speed,
                         )
 
-                    alert_events: list[IntrusionEvent] = []
                     for event in events:
                         event_with_snapshot = event
                         if event.event == "enter":
                             alert_count += 1
-                            snapshot_path = save_alert_snapshot(
-                                frame,
-                                alert_dir,
-                                prepared_source.output_stem,
-                                event,
+                            alert_text = (
+                                f"ALERT: {event.tracked_object.class_name} "
+                                f"ID {event.tracked_object.track_id} entered {roi.name}"
                             )
+                            active_alert_message = AlertMessage(
+                                text=alert_text,
+                                expires_at_frame=(
+                                    processed_frames + alert_display_frames
+                                ),
+                            )
+                            snapshot_path = None
+                            if save_snapshots:
+                                alert_frame = frame.copy()
+                                draw_alert_banner(
+                                    alert_frame,
+                                    active_alert_message,
+                                    processed_frames,
+                                )
+                                snapshot_path = save_alert_snapshot(
+                                    alert_frame,
+                                    alert_dir,
+                                    prepared_source.output_stem,
+                                    event,
+                                )
                             event_with_snapshot = IntrusionEvent(
                                 frame_number=event.frame_number,
                                 tracked_object=event.tracked_object,
                                 event=event.event,
                                 snapshot_path=snapshot_path,
                             )
-                            alert_events.append(event_with_snapshot)
                             if play_sound:
                                 play_alert_sound()
 
-                        write_event_row(csv_writer, event_with_snapshot)
+                        write_event_row(csv_writer, event_with_snapshot, roi.name)
 
                     elapsed = time.perf_counter() - frame_started_at
                     instantaneous_fps = 1.0 / elapsed if elapsed > 0 else 0.0
-                    draw_alert_banner(frame, alert_events)
+                    draw_alert_banner(
+                        frame,
+                        active_alert_message,
+                        processed_frames,
+                    )
                     draw_panel(frame, roi, alert_count, instantaneous_fps)
                     history.prune(processed_frames)
                     writer.write(frame)
@@ -708,25 +764,6 @@ def process_video(
             raise InferenceError("No frames could be read from the source video.")
 
     return alert_dir, output_video_path, csv_path, processed_frames, alert_count
-
-
-def parse_roi(value: str) -> tuple[int, int, int, int]:
-    """Parse x1,y1,x2,y2 CLI ROI coordinates."""
-    try:
-        parts = [int(part.strip()) for part in value.split(",")]
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            "--roi must use integer coordinates: x1,y1,x2,y2"
-        ) from exc
-
-    if len(parts) != 4:
-        raise argparse.ArgumentTypeError("--roi must contain four values.")
-    x1, y1, x2, y2 = parts
-    if x2 <= x1 or y2 <= y1:
-        raise argparse.ArgumentTypeError(
-            "--roi requires x2 > x1 and y2 > y1."
-        )
-    return x1, y1, x2, y2
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -788,6 +825,25 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Play a short alert sound on first intrusion per track.",
     )
+    parser.add_argument(
+        "--alert-display-frames",
+        type=int,
+        default=60,
+        help="Frames to keep the latest alert banner visible (default: 60).",
+    )
+    parser.add_argument(
+        "--ignore-initial-inside",
+        action="store_true",
+        help="Do not alert for tracks already inside ROI when first observed.",
+    )
+    parser.add_argument(
+        "--save-snapshots",
+        type=parse_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Save alert snapshots on enter events (default).",
+    )
     return parser
 
 
@@ -802,6 +858,9 @@ def main() -> int:
     if args.imgsz <= 0:
         LOGGER.error("--imgsz must be greater than zero.")
         return 2
+    if args.alert_display_frames < 1:
+        LOGGER.error("--alert-display-frames must be at least 1.")
+        return 2
 
     try:
         alert_dir, output_video, csv_path, frames, alerts = process_video(
@@ -815,6 +874,9 @@ def main() -> int:
             show_direction=args.show_direction,
             show_speed=args.show_speed,
             play_sound=args.play_sound,
+            alert_display_frames=args.alert_display_frames,
+            ignore_initial_inside=args.ignore_initial_inside,
+            save_snapshots=args.save_snapshots,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)

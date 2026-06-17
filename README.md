@@ -458,9 +458,17 @@ ROI Intrusion Alert, belirlenen ROI bölgesine ilk kez giren her benzersiz
 `track_id` için alarm üretir. Aynı track ID için tekrar alarm verilmez; ancak
 nesne ROI dışına çıktığında `exit` olayı CSV dosyasına yazılır.
 
-Alarm anında video üzerinde kırmızı alert banner gösterilir ve tam frame
-snapshot kaydedilir. İsteğe bağlı olarak `--play-sound` argümanı ile kısa sesli
-uyarı da verilebilir.
+Varsayılan ROI frame merkezindeki daha dar bir dikdörtgen alandır. Kullanıcı
+`--roi x1,y1,x2,y2` verirse bu değerler aynen kullanılır. Alarm anında video
+üzerinde kırmızı arka planlı büyük alert banner gösterilir ve bu mesaj
+varsayılan olarak 60 frame boyunca ekranda kalır. Süre
+`--alert-display-frames` ile değiştirilebilir.
+
+Alert snapshot dosyası yalnızca ilk `enter` olayı için kaydedilir. Snapshot
+kaydı varsayılan olarak açıktır; kapatmak için `--save-snapshots false`
+kullanılabilir. Video başladığında zaten ROI içinde olan nesneleri alarm
+dışında bırakmak için `--ignore-initial-inside` eklenebilir. İsteğe bağlı olarak
+`--play-sound` argümanı ile kısa sesli uyarı da verilebilir.
 
 Intrusion pipeline:
 
@@ -476,10 +484,22 @@ outputs/logs/intrusion_events.csv
 outputs/videos/<video_adi>_intrusion.mp4
 ```
 
+CSV kolonları:
+
+```text
+frame,track_id,class,event,confidence,center_x,center_y,roi_name,snapshot_path
+```
+
 Örnek kullanım:
 
 ```powershell
 python src/roi_intrusion_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Restricted Zone"
+```
+
+Demo komutu:
+
+```powershell
+python src/roi_intrusion_alert.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi-name "Intrusion Zone" --ignore-initial-inside
 ```
 
 Sesli alarm:
