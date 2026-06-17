@@ -452,6 +452,42 @@ Kavşak ROI:
 python src/roi_zone_counter.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 700,350,2300,1350 --roi-name "Intersection Zone"
 ```
 
+## ROI Intrusion Alert
+
+ROI Intrusion Alert, belirlenen ROI bölgesine ilk kez giren her benzersiz
+`track_id` için alarm üretir. Aynı track ID için tekrar alarm verilmez; ancak
+nesne ROI dışına çıktığında `exit` olayı CSV dosyasına yazılır.
+
+Alarm anında video üzerinde kırmızı alert banner gösterilir ve tam frame
+snapshot kaydedilir. İsteğe bağlı olarak `--play-sound` argümanı ile kısa sesli
+uyarı da verilebilir.
+
+Intrusion pipeline:
+
+```text
+src/roi_intrusion_alert.py
+```
+
+Çıktılar:
+
+```text
+outputs/alerts/
+outputs/logs/intrusion_events.csv
+outputs/videos/<video_adi>_intrusion.mp4
+```
+
+Örnek kullanım:
+
+```powershell
+python src/roi_intrusion_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Restricted Zone"
+```
+
+Sesli alarm:
+
+```powershell
+python src/roi_intrusion_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Restricted Zone" --play-sound
+```
+
 ## Demo Video
 
 Final demo videosu olarak yoğun otoyol trafiği içeren yüksek çözünürlüklü
@@ -582,6 +618,7 @@ UAV_Object_Detection/
 ├── models/
 │   └── yolo11s_2class_960_best.pt
 ├── outputs/
+│   ├── alerts/
 │   ├── heatmaps/
 │   ├── logs/
 │   ├── videos/
@@ -594,6 +631,7 @@ UAV_Object_Detection/
 │   ├── convert_visdrone_4class.py
 │   ├── generate_heatmap.py
 │   ├── inference_video.py
+│   ├── roi_intrusion_alert.py
 │   ├── roi_zone_counter.py
 │   └── track_video.py
 ├── data_2class.yaml
