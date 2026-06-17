@@ -18,6 +18,7 @@ olarak **YOLO11s 2-Class** seçilmiştir.
 - Hareket yönü ve yörünge çizimi
 - Piksel tabanlı göreli hız tahmini
 - Line Crossing Counter ile yönlü nesne geçiş sayımı
+- ROI Zone Counting ile dikdörtgen bölge içi nesne sayımı
 - Traffic Heatmap ile yoğunluk haritası üretimi
 - Anlık inference FPS değerinin görüntülenmesi
 - İşlenmiş videonun MP4 formatında kaydedilmesi
@@ -400,6 +401,57 @@ Video üzerinde çizgi sarı renkle, varsayılan olarak 2 piksel kalınlıkta
 çizilir ve yanında küçük `Counting Line` etiketi gösterilir. Line crossing
 sayaçları CSV dosyasına da yazılır.
 
+## ROI Zone Counting
+
+ROI, video üzerinde belirlenen dikdörtgen ilgi bölgesidir. ROI Zone Counting
+özelliği, YOLO11s 2-Class tespitlerini ByteTrack ile takip eder ve bu bölge
+içindeki aktif `person` / `vehicle` sayılarını hesaplar.
+
+Sistem ayrıca video boyunca ROI'ye giren benzersiz `track_id` değerlerini tutar.
+Bir track ROI'ye ilk kez girdiğinde unique count yalnızca bir kez artar.
+Track'in ROI dışından içine geçmesi `enter`, ROI içinden dışına çıkması `exit`
+olayı olarak CSV dosyasına yazılır.
+
+Bu özellik otopark, kavşak, güvenlik bölgesi ve yoğunluk analizi gibi
+senaryolarda kullanılabilir.
+
+ROI pipeline:
+
+```text
+src/roi_zone_counter.py
+```
+
+Çıktılar:
+
+```text
+outputs/videos/<video_adi>_roi.mp4
+outputs/logs/roi_events.csv
+```
+
+CSV kolonları:
+
+```text
+frame,track_id,class,confidence,center_x,center_y,in_roi,event,active_roi_total,active_roi_vehicle,active_roi_person,unique_roi_total,unique_roi_vehicle,unique_roi_person
+```
+
+Varsayılan orta ROI:
+
+```powershell
+python src/roi_zone_counter.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960
+```
+
+Özel ROI:
+
+```powershell
+python src/roi_zone_counter.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Highway Zone"
+```
+
+Kavşak ROI:
+
+```powershell
+python src/roi_zone_counter.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 700,350,2300,1350 --roi-name "Intersection Zone"
+```
+
 ## Demo Video
 
 Final demo videosu olarak yoğun otoyol trafiği içeren yüksek çözünürlüklü
@@ -542,6 +594,7 @@ UAV_Object_Detection/
 │   ├── convert_visdrone_4class.py
 │   ├── generate_heatmap.py
 │   ├── inference_video.py
+│   ├── roi_zone_counter.py
 │   └── track_video.py
 ├── data_2class.yaml
 ├── data_4class.yaml
@@ -561,7 +614,7 @@ amacıyla repoda tutulur.
 - Kamera hareketi telafisi
 - Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
-- ROI (Region of Interest) sayımı
+- Çoklu ROI (Region of Interest) bölgeleri
 - ROI bazlı heatmap analizi
 - Çoklu line crossing bölgeleri
 - Canlı kamera ve RTSP akış desteği
