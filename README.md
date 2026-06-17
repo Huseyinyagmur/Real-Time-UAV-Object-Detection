@@ -508,6 +508,62 @@ Sesli alarm:
 python src/roi_intrusion_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Restricted Zone" --play-sound
 ```
 
+## Wrong Way Detection
+
+Wrong Way Detection, beklenen trafik yönünü kullanıcıdan alır ve ByteTrack ile
+takip edilen `Vehicle` nesnelerinin bu yönün tam tersine hareket edip etmediğini
+tespit eder. Person sınıfı `--show-person` ile ekranda çizilebilir; ancak
+wrong-way alarmı varsayılan olarak yalnızca vehicle sınıfı için üretilir.
+
+Sistem her `track_id` için merkez noktası geçmişi tutar. Track en az
+`--min-track-frames` kadar gözlemlendikten sonra ilk ve son merkez arasındaki
+yer değiştirme hesaplanır. Hareket `--direction-threshold` altında kalıyorsa
+`stable` kabul edilir ve alarm üretilmez. Beklenen yönün yalnızca tam tersi yön
+wrong-way olarak işaretlenir; yan yönler varsayılan olarak ihlal sayılmaz.
+
+Wrong-way event oluştuğunda video üzerinde kırmızı kutu, büyük alert banner,
+snapshot ve CSV log üretilir. Aynı `track_id` için yalnızca bir kez alert
+oluşturulur. Bu özellik güvenlik, trafik denetimi ve İHA tabanlı yol izleme
+senaryoları için kullanılabilir.
+
+Wrong-way pipeline:
+
+```text
+src/wrong_way_detection.py
+```
+
+Çıktılar:
+
+```text
+outputs/alerts/<video_adi>_frame000123_vehicle_id12_wrong_way.jpg
+outputs/logs/wrong_way_events.csv
+outputs/videos/<video_adi>_wrong_way.mp4
+```
+
+CSV kolonları:
+
+```text
+frame,track_id,class,confidence,direction,expected_direction,event,center_x,center_y,snapshot_path
+```
+
+Sağa doğru trafik beklenen yol:
+
+```powershell
+python src/wrong_way_detection.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --expected-direction right
+```
+
+Sola doğru trafik beklenen yol:
+
+```powershell
+python src/wrong_way_detection.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --expected-direction left
+```
+
+Yukarı doğru trafik beklenen yol:
+
+```powershell
+python src/wrong_way_detection.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --expected-direction up
+```
+
 ## Demo Video
 
 Final demo videosu olarak yoğun otoyol trafiği içeren yüksek çözünürlüklü
@@ -653,7 +709,8 @@ UAV_Object_Detection/
 │   ├── inference_video.py
 │   ├── roi_intrusion_alert.py
 │   ├── roi_zone_counter.py
-│   └── track_video.py
+│   ├── track_video.py
+│   └── wrong_way_detection.py
 ├── data_2class.yaml
 ├── data_4class.yaml
 ├── requirements.txt
