@@ -508,6 +508,54 @@ Sesli alarm:
 python src/roi_intrusion_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --roi 500,300,1600,900 --roi-name "Restricted Zone" --play-sound
 ```
 
+## Pedestrian Zone Intrusion
+
+Pedestrian Zone Intrusion, belirlenen `Restricted Area` ROI içine giren yalnızca
+`Person` sınıfı tracklerini izler ve kişi bölgeye ilk girdiğinde alarm üretir.
+Aynı kişi ROI içinde kaldığı sürece tekrar alarm verilmez; kişi çıkıp tekrar
+girerse yeni `enter` olayı oluşturulur.
+
+Video üzerinde ROI `Restricted Area` etiketiyle çizilir. ROI içine giren kişiler
+kırmızı kutu ile vurgulanır ve alarm anında üstte kırmızı uyarı bandı gösterilir:
+
+```text
+ALERT:
+Person entered restricted zone
+Person ID 12
+```
+
+Pedestrian intrusion pipeline:
+
+```text
+src/pedestrian_zone_intrusion.py
+```
+
+Çıktılar:
+
+```text
+outputs/logs/pedestrian_intrusion_events.csv
+outputs/alerts/
+outputs/videos/<video_adi>_pedestrian_intrusion.mp4
+```
+
+CSV kolonları:
+
+```text
+frame,track_id,center_x,center_y,event,snapshot_path
+```
+
+Örnek kullanım:
+
+```powershell
+python src/pedestrian_zone_intrusion.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt
+```
+
+Özel ROI:
+
+```powershell
+python src/pedestrian_zone_intrusion.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt --roi 500,300,1600,900
+```
+
 ## Wrong Way Detection
 
 Wrong Way Detection, beklenen trafik yönünü kullanıcıdan alır ve ByteTrack ile
@@ -818,6 +866,7 @@ UAV_Object_Detection/
 │   ├── convert_visdrone_4class.py
 │   ├── generate_heatmap.py
 │   ├── inference_video.py
+│   ├── pedestrian_zone_intrusion.py
 │   ├── roi_intrusion_alert.py
 │   ├── roi_zone_counter.py
 │   ├── speed_violation_alert.py
