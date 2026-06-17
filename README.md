@@ -564,6 +564,53 @@ Yukarı doğru trafik beklenen yol:
 python src/wrong_way_detection.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --expected-direction up
 ```
 
+## Speed Violation Alert
+
+Speed Violation Alert, ByteTrack ile takip edilen `Vehicle` nesnelerinin piksel
+tabanlı hızını hesaplar ve belirlenen `px/s` limitini aşan araçlar için alarm
+üretir. Bu sistem gerçek km/h hesabı yapmaz; hız değeri video üzerindeki merkez
+noktalarının piksel/saniye hareketinden türetilen göreli bir ölçümdür.
+
+Track en az `--min-track-frames` kadar gözlemlendikten sonra son merkez
+geçmişinden `speed_px_per_sec` hesaplanır. Değer `--speed-limit` üstüne çıkarsa
+`speed_violation` olayı üretilir. Aynı track için tekrar alarm üretimi
+`--cooldown-frames` ile sınırlandırılır.
+
+İhlal yapan araçlar kırmızı kutu ile gösterilir, üstte alert banner görünür,
+snapshot kaydedilir ve CSV log oluşturulur.
+
+Speed violation pipeline:
+
+```text
+src/speed_violation_alert.py
+```
+
+Çıktılar:
+
+```text
+outputs/alerts/<video_adi>_frame000542_vehicle_id12_speed_violation.jpg
+outputs/logs/speed_violations.csv
+outputs/videos/<video_adi>_speed_violation.mp4
+```
+
+CSV kolonları:
+
+```text
+frame,track_id,class,speed_px_per_sec,speed_limit,direction,event,center_x,center_y,snapshot_path
+```
+
+Örnek hız limiti 120 px/s:
+
+```powershell
+python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 120
+```
+
+Örnek hız limiti 150 px/s:
+
+```powershell
+python src/speed_violation_alert.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 150
+```
+
 ## Demo Video
 
 Final demo videosu olarak yoğun otoyol trafiği içeren yüksek çözünürlüklü
@@ -709,6 +756,7 @@ UAV_Object_Detection/
 │   ├── inference_video.py
 │   ├── roi_intrusion_alert.py
 │   ├── roi_zone_counter.py
+│   ├── speed_violation_alert.py
 │   ├── track_video.py
 │   └── wrong_way_detection.py
 ├── data_2class.yaml
