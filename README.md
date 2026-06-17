@@ -644,6 +644,46 @@ Demo komutu:
 python src/track_video.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-threshold 2 --line-orientation vertical --line-position 0.45 --line-thickness 2
 ```
 
+## Traffic Flow Analysis
+
+Traffic Flow Analysis, final YOLO11s 2-Class modeli ve ByteTrack takip
+çıktılarını kullanarak video sonunda yapısal trafik raporları üretir. Sistem
+`Vehicle` ve `Person` tracklerini analiz eder; her track için yön, ortalama hız,
+maksimum hız, ilk/son frame ve süre bilgilerini çıkarır.
+
+Bu analiz video üzerine çizim yapmaz; amaç demo videosundan sonra rapor,
+zaman çizelgesi ve grafik üretmektir. Zaman bazlı trafik yoğunluğu
+`--timeline-window` ile belirlenen saniyelik aralıklara göre hesaplanır ve en
+yoğun zaman aralığı `peak_traffic` olarak JSON özetine yazılır.
+
+Traffic flow pipeline:
+
+```text
+src/traffic_flow_analysis.py
+```
+
+Üretilen çıktılar:
+
+```text
+outputs/reports/<video_adi>_flow_summary.json
+outputs/reports/<video_adi>_flow_tracks.csv
+outputs/reports/<video_adi>_flow_timeline.csv
+outputs/reports/<video_adi>_flow_timeline.png
+outputs/reports/<video_adi>_flow_directions.png
+```
+
+Örnek kullanım:
+
+```powershell
+python src/traffic_flow_analysis.py --source video.mp4
+```
+
+Final model ile örnek kullanım:
+
+```powershell
+python src/traffic_flow_analysis.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --timeline-window 5
+```
+
 ## Traffic Heatmap
 
 Traffic Heatmap özelliği, video boyunca tespit edilen nesnelerin merkez
@@ -763,6 +803,7 @@ UAV_Object_Detection/
 │   ├── alerts/
 │   ├── heatmaps/
 │   ├── logs/
+│   ├── reports/
 │   ├── videos/
 │   ├── v8n_4class_50/
 │   ├── v8s_4class_50/
@@ -777,6 +818,7 @@ UAV_Object_Detection/
 │   ├── roi_zone_counter.py
 │   ├── speed_violation_alert.py
 │   ├── track_video.py
+│   ├── traffic_flow_analysis.py
 │   └── wrong_way_detection.py
 ├── data_2class.yaml
 ├── data_4class.yaml
