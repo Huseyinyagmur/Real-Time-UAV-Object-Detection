@@ -584,6 +584,13 @@ azaltmak için `--startup-grace-frames` kullanılır. Varsayılan olarak aynı
 `--no-one-alert-per-track` ile kapatılabilir. `--cooldown-frames` parametresi
 tekil alarm modu kapatıldığında aynı track için tekrar alarm sıklığını sınırlar.
 
+Başlangıçta zaten sahnede bulunan araçlar varsayılan olarak alarm dışı bırakılır.
+`--ignore-initial-tracks` davranışı, ilk `--startup-grace-frames` boyunca görülen
+track ID değerlerini başlangıç track'i olarak işaretler ve bu araçlar için speed
+violation alarmı, kırmızı kutu, snapshot ve alert banner üretmez. Bu özellik
+video başında oluşan toplu yanlış alarmları azaltır. Başlangıçtaki araçların da
+değerlendirilmesi istenirse `--disable-ignore-initial-tracks` kullanılabilir.
+
 Varsayılan hız limiti `360 px/s` olarak seçilmiştir. Bu değer video
 çözünürlüğü, FPS, kamera açısı, drone irtifası ve sahne ölçeğine bağlıdır.
 Farklı videolarda uygun limit yeniden kalibre edilmelidir.
@@ -614,13 +621,13 @@ frame,track_id,class,speed_px_per_sec,smoothed_speed_px_per_sec,speed_limit,dire
 Önerilen 4K otoyol demo komutu:
 
 ```powershell
-python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 360 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 30 --one-alert-per-track
+python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 360 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 60 --one-alert-per-track
 ```
 
-Alternatif daha seçici hız limiti:
+Başlangıçtaki araçları da değerlendirmek için:
 
 ```powershell
-python src/speed_violation_alert.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 400 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 30 --one-alert-per-track
+python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 360 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 60 --one-alert-per-track --disable-ignore-initial-tracks
 ```
 
 ## Demo Video

@@ -185,6 +185,7 @@ class SpeedViolationMonitor:
         violation_frames: int,
         startup_grace_frames: int,
         one_alert_per_track: bool,
+        ignore_initial_tracks: bool,
     ) -> None:
         self.speed_limit = speed_limit
         self.cooldown_frames = cooldown_frames
@@ -192,6 +193,7 @@ class SpeedViolationMonitor:
         self.violation_frames = violation_frames
         self.startup_grace_frames = startup_grace_frames
         self.one_alert_per_track = one_alert_per_track
+        self.ignore_initial_tracks = ignore_initial_tracks
         self.speed_samples: dict[int, deque[float]] = defaultdict(
             lambda: deque(maxlen=self.speed_window)
         )
@@ -199,6 +201,7 @@ class SpeedViolationMonitor:
         self.last_alert_frame: dict[int, int] = {}
         self.alerted_track_ids: set[int] = set()
         self.unique_violator_ids: set[int] = set()
+        self.initial_track_ids: set[int] = set()
 
     def update(
         self,
@@ -220,6 +223,15 @@ class SpeedViolationMonitor:
             smoothed_speeds[tracked_object.track_id] = smoothed_speed
 
             if frame_number <= self.startup_grace_frames:
+                if self.ignore_initial_tracks:
+                    self.initial_track_ids.add(tracked_object.track_id)
+                self.above_limit_streak[tracked_object.track_id] = 0
+                continue
+
+            if (
+                self.ignore_initial_tracks
+                and tracked_object.track_id in self.initial_track_ids
+            ):
                 self.above_limit_streak[tracked_object.track_id] = 0
                 continue
 
@@ -564,7 +576,8 @@ def process_video(
     violation_frames: int,
     startup_grace_frames: int,
     one_alert_per_track: bool,
-) -> tuple[Path, Path, Path, int, int, int]:
+    ignore_initial_tracks: bool,
+) -> tuple[Path, Path, Path, int, int, int, int]:
     """Run speed violation detection and return output paths plus totals."""
     model_path = validate_file(model_path, "Model")
 
@@ -590,6 +603,7 @@ def process_video(
             violation_frames=violation_frames,
             startup_grace_frames=startup_grace_frames,
             one_alert_per_track=one_alert_per_track,
+            ignore_initial_tracks=ignore_initial_tracks,
         )
         processed_frames = 0
         violation_event_count = 0
@@ -745,6 +759,7 @@ def process_video(
         processed_frames,
         len(monitor.unique_violator_ids),
         violation_event_count,
+        len(monitor.initial_track_ids),
     )
 
 
@@ -839,6 +854,22 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--ignore-initial-tracks",
+        dest="ignore_initial_tracks",
+        action="store_true",
+        default=True,
+        help=(
+            "Ignore tracks observed during startup grace for speed alerts "
+            "(default: true)."
+        ),
+    )
+    parser.add_argument(
+        "--disable-ignore-initial-tracks",
+        dest="ignore_initial_tracks",
+        action="store_false",
+        help="Evaluate tracks that are already visible during startup grace.",
+    )
+    parser.add_argument(
         "--show-direction",
         type=parse_bool,
         nargs="?",
@@ -890,6 +921,7 @@ def main() -> int:
             frames,
             unique_violators,
             violation_events,
+            ignored_initial_tracks,
         ) = process_video(
             source=args.source,
             model_path=args.model,
@@ -905,6 +937,7 @@ def main() -> int:
             violation_frames=args.violation_frames,
             startup_grace_frames=args.startup_grace_frames,
             one_alert_per_track=args.one_alert_per_track,
+            ignore_initial_tracks=args.ignore_initial_tracks,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
@@ -913,6 +946,7 @@ def main() -> int:
     LOGGER.info("Processed frames: %d", frames)
     LOGGER.info("Unique violators: %d", unique_violators)
     LOGGER.info("Violation events: %d", violation_events)
+    LOGGER.info("Ignored initial tracks: %d", ignored_initial_tracks)
     LOGGER.info("Output video path: %s", output_video)
     LOGGER.info("CSV log path: %s", csv_path)
     LOGGER.info("Snapshots folder: %s", alert_dir)

@@ -19,4 +19,5 @@ outputs/logs/
 
 *.pt
 data/sample_videos/
-*.qa_speed_review 
+.qa_speed_review 
+.qa_speed_review_new
