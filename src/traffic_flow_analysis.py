@@ -7,6 +7,7 @@ import csv
 import json
 import logging
 import statistics
+from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +30,7 @@ LOGGER = logging.getLogger("traffic_flow_analysis")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "yolo11s_2class_960_best.pt"
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "outputs" / "reports"
+REPORT_VERSION = "1.1"
 
 DIRECTION_ORDER = ("left", "right", "up", "down", "stable")
 TRACK_CSV_COLUMNS = (
@@ -262,6 +264,8 @@ def build_summary(
         default=None,
     )
     return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "report_version": REPORT_VERSION,
         "source": source,
         "processed_frames": processed_frames,
         "fps": fps,
@@ -357,26 +361,24 @@ def save_timeline_chart(
     path: Path,
     timeline_rows: list[dict[str, float | int]],
 ) -> None:
-    """Save a simple traffic density line chart."""
+    """Save a traffic density timeline chart."""
     width, height = 1280, 720
-    margin_left, margin_right = 90, 40
-    margin_top, margin_bottom = 80, 90
+    margin_left, margin_right = 110, 50
+    margin_top, margin_bottom = 95, 100
     chart = np.full((height, width, 3), 255, dtype=np.uint8)
     plot_w = width - margin_left - margin_right
     plot_h = height - margin_top - margin_bottom
-
-    series = {
-        "Total": [float(row["avg_active_total"]) for row in timeline_rows],
-        "Vehicle": [float(row["avg_active_vehicle"]) for row in timeline_rows],
-        "Person": [float(row["avg_active_person"]) for row in timeline_rows],
-    }
-    colors = {
-        "Total": (40, 40, 40),
-        "Vehicle": (255, 144, 30),
-        "Person": (0, 170, 0),
-    }
-    max_value = max((max(values, default=0.0) for values in series.values()), default=1.0)
-    max_value = max(max_value, 1.0)
+    vehicle_values = [
+        float(row["avg_active_vehicle"]) for row in timeline_rows
+    ]
+    time_values = [
+        (float(row["time_start_sec"]) + float(row["time_end_sec"])) / 2.0
+        for row in timeline_rows
+    ]
+    max_value = max(max(vehicle_values, default=0.0), 1.0)
+    max_time = max(time_values, default=1.0)
+    min_time = min(time_values, default=0.0)
+    time_span = max(max_time - min_time, 1.0)
 
     cv2.rectangle(
         chart,
@@ -385,29 +387,62 @@ def save_timeline_chart(
         (230, 230, 230),
         1,
     )
-    draw_text(chart, "Traffic Flow Timeline", (margin_left, 45), 1.0)
-    draw_text(chart, "Avg active tracks", (10, margin_top + 20), 0.55)
-    draw_text(chart, "Time bins", (width // 2 - 50, height - 30), 0.6)
+    draw_text(chart, "Traffic Flow Timeline", (margin_left, 50), 1.0)
+    draw_text(chart, "Y: Average Active Vehicles", (margin_left, 78), 0.6)
+    draw_text(chart, "Time (seconds)", (width // 2 - 80, height - 30), 0.65)
 
-    for label, values in series.items():
-        points: list[tuple[int, int]] = []
-        for index, value in enumerate(values):
-            if len(values) == 1:
-                x = margin_left + plot_w // 2
-            else:
-                x = margin_left + round(index * plot_w / (len(values) - 1))
-            y = margin_top + plot_h - round(value * plot_h / max_value)
-            points.append((x, y))
-        for start, end in zip(points, points[1:]):
-            cv2.line(chart, start, end, colors[label], 3, cv2.LINE_AA)
-        for point in points:
-            cv2.circle(chart, point, 5, colors[label], -1, cv2.LINE_AA)
+    grid_color = (225, 225, 225)
+    axis_color = (80, 80, 80)
+    tick_count = 5
+    for index in range(tick_count + 1):
+        y = margin_top + plot_h - round(index * plot_h / tick_count)
+        value = max_value * index / tick_count
+        cv2.line(chart, (margin_left, y), (margin_left + plot_w, y), grid_color, 1)
+        draw_text(chart, f"{value:.1f}", (margin_left - 78, y + 6), 0.5, axis_color, 1)
 
-    legend_x = margin_left + 20
-    for index, (label, color) in enumerate(colors.items()):
-        y = margin_top + 30 + (index * 32)
-        cv2.rectangle(chart, (legend_x, y - 16), (legend_x + 20, y + 4), color, -1)
-        draw_text(chart, label, (legend_x + 30, y), 0.6)
+        x = margin_left + round(index * plot_w / tick_count)
+        time_value = min_time + (time_span * index / tick_count)
+        cv2.line(chart, (x, margin_top), (x, margin_top + plot_h), grid_color, 1)
+        draw_text(chart, f"{time_value:.0f}s", (x - 22, margin_top + plot_h + 32), 0.5, axis_color, 1)
+
+    cv2.line(chart, (margin_left, margin_top + plot_h), (margin_left + plot_w, margin_top + plot_h), axis_color, 2)
+    cv2.line(chart, (margin_left, margin_top), (margin_left, margin_top + plot_h), axis_color, 2)
+
+    points: list[tuple[int, int]] = []
+    for time_value, value in zip(time_values, vehicle_values):
+        x = margin_left + round((time_value - min_time) * plot_w / time_span)
+        y = margin_top + plot_h - round(value * plot_h / max_value)
+        points.append((x, y))
+
+    vehicle_color = (255, 144, 30)
+    for start, end in zip(points, points[1:]):
+        cv2.line(chart, start, end, vehicle_color, 3, cv2.LINE_AA)
+    for point in points:
+        cv2.circle(chart, point, 5, vehicle_color, -1, cv2.LINE_AA)
+
+    if points and vehicle_values:
+        peak_index = max(range(len(vehicle_values)), key=vehicle_values.__getitem__)
+        peak_point = points[peak_index]
+        peak_value = vehicle_values[peak_index]
+        cv2.circle(chart, peak_point, 10, (0, 0, 255), 3, cv2.LINE_AA)
+        annotation = f"Peak: {peak_value:.1f} vehicles"
+        text_x = min(peak_point[0] + 18, width - 310)
+        text_y = max(peak_point[1] - 22, margin_top + 28)
+        cv2.rectangle(
+            chart,
+            (text_x - 8, text_y - 24),
+            (text_x + 285, text_y + 8),
+            (255, 255, 255),
+            -1,
+        )
+        cv2.rectangle(
+            chart,
+            (text_x - 8, text_y - 24),
+            (text_x + 285, text_y + 8),
+            (0, 0, 255),
+            1,
+        )
+        draw_text(chart, annotation, (text_x, text_y), 0.6, (0, 0, 180), 2)
 
     cv2.imwrite(str(path), chart)
 
@@ -424,13 +459,19 @@ def save_direction_chart(
     plot_h = height - margin_top - margin_bottom
     vehicle_dirs = summary["vehicle"]["directions"]  # type: ignore[index]
     person_dirs = summary["person"]["directions"]  # type: ignore[index]
+    vehicle_total = int(summary.get("vehicle_count", 0))
     max_count = max(
         [int(vehicle_dirs[direction]) for direction in DIRECTION_ORDER]
         + [int(person_dirs[direction]) for direction in DIRECTION_ORDER]
         + [1]
     )
 
-    draw_text(chart, "Traffic Flow Directions", (margin_left, 50), 1.0)
+    draw_text(
+        chart,
+        f"Traffic Flow Directions - Vehicles: {vehicle_total}",
+        (margin_left, 50),
+        1.0,
+    )
     cv2.rectangle(
         chart,
         (margin_left, margin_top),
@@ -463,8 +504,10 @@ def save_direction_chart(
             (0, 170, 0),
             -1,
         )
-        draw_text(chart, str(vehicle_count), (center_x - bar_w - 10, baseline - vehicle_h - 8), 0.5)
-        draw_text(chart, str(person_count), (center_x + 4, baseline - person_h - 8), 0.5)
+        vehicle_label_y = max(baseline - vehicle_h - 8, margin_top + 18)
+        person_label_y = max(baseline - person_h - 8, margin_top + 18)
+        draw_text(chart, str(vehicle_count), (center_x - bar_w - 10, vehicle_label_y), 0.5)
+        draw_text(chart, str(person_count), (center_x + 4, person_label_y), 0.5)
         draw_text(chart, direction, (center_x - 45, baseline + 35), 0.55)
 
     cv2.rectangle(chart, (margin_left + 20, margin_top + 20), (margin_left + 40, margin_top + 40), (255, 144, 30), -1)

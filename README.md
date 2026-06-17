@@ -651,6 +651,10 @@ Traffic Flow Analysis, final YOLO11s 2-Class modeli ve ByteTrack takip
 `Vehicle` ve `Person` tracklerini analiz eder; her track için yön, ortalama hız,
 maksimum hız, ilk/son frame ve süre bilgilerini çıkarır.
 
+Bu bölümdeki hız değerleri gerçek km/h değildir. Track merkez noktalarının
+video üzerindeki piksel/saniye hareketinden hesaplanan göreli `px/s`
+değerleridir.
+
 Bu analiz video üzerine çizim yapmaz; amaç demo videosundan sonra rapor,
 zaman çizelgesi ve grafik üretmektir. Zaman bazlı trafik yoğunluğu
 `--timeline-window` ile belirlenen saniyelik aralıklara göre hesaplanır ve en
