@@ -571,13 +571,25 @@ tabanlı hızını hesaplar ve belirlenen `px/s` limitini aşan araçlar için a
 üretir. Bu sistem gerçek km/h hesabı yapmaz; hız değeri video üzerindeki merkez
 noktalarının piksel/saniye hareketinden türetilen göreli bir ölçümdür.
 
-Track en az `--min-track-frames` kadar gözlemlendikten sonra son merkez
-geçmişinden `speed_px_per_sec` hesaplanır. Değer `--speed-limit` üstüne çıkarsa
-`speed_violation` olayı üretilir. Aynı track için tekrar alarm üretimi
-`--cooldown-frames` ile sınırlandırılır.
+Track en az `--min-track-frames` kadar gözlemlendikten sonra
+`speed_px_per_sec` hesaplanır. Yanlış pozitifleri azaltmak için hız değerleri
+rolling median ile yumuşatılır ve karar aşamasında
+`smoothed_speed_px_per_sec` kullanılır. Bir aracın alarm üretmesi için
+yumuşatılmış hızın en az `--violation-frames` ardışık değerlendirmede
+`--speed-limit` üstünde kalması gerekir.
+
+Video başlangıcında sahnede zaten bulunan araçların toplu alarm üretmesini
+azaltmak için `--startup-grace-frames` kullanılır. Varsayılan olarak aynı
+`track_id` için yalnızca bir kez alarm üretilir; bu davranış
+`--no-one-alert-per-track` ile kapatılabilir. `--cooldown-frames` parametresi
+tekil alarm modu kapatıldığında aynı track için tekrar alarm sıklığını sınırlar.
+
+Varsayılan hız limiti `360 px/s` olarak seçilmiştir. Bu değer video
+çözünürlüğü, FPS, kamera açısı, drone irtifası ve sahne ölçeğine bağlıdır.
+Farklı videolarda uygun limit yeniden kalibre edilmelidir.
 
 İhlal yapan araçlar kırmızı kutu ile gösterilir, üstte alert banner görünür,
-snapshot kaydedilir ve CSV log oluşturulur.
+confirmed violation oluştuğunda snapshot kaydedilir ve CSV log oluşturulur.
 
 Speed violation pipeline:
 
@@ -596,19 +608,19 @@ outputs/videos/<video_adi>_speed_violation.mp4
 CSV kolonları:
 
 ```text
-frame,track_id,class,speed_px_per_sec,speed_limit,direction,event,center_x,center_y,snapshot_path
+frame,track_id,class,speed_px_per_sec,smoothed_speed_px_per_sec,speed_limit,direction,event,center_x,center_y,snapshot_path
 ```
 
-Örnek hız limiti 120 px/s:
+Önerilen 4K otoyol demo komutu:
 
 ```powershell
-python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 120
+python src/speed_violation_alert.py --source data/sample_videos/test3.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 360 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 30 --one-alert-per-track
 ```
 
-Örnek hız limiti 150 px/s:
+Alternatif daha seçici hız limiti:
 
 ```powershell
-python src/speed_violation_alert.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 150
+python src/speed_violation_alert.py --source data/sample_videos/test4.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --speed-limit 400 --min-track-frames 15 --speed-window 5 --violation-frames 3 --startup-grace-frames 30 --one-alert-per-track
 ```
 
 ## Demo Video

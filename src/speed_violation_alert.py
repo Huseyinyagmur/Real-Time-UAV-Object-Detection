@@ -6,6 +6,7 @@ import argparse
 import csv
 import logging
 import math
+import statistics
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ CSV_COLUMNS = (
     "track_id",
     "class",
     "speed_px_per_sec",
+    "smoothed_speed_px_per_sec",
     "speed_limit",
     "direction",
     "event",
@@ -67,7 +69,6 @@ class TrackedObject:
     center_y: int
     direction: str
     speed_px_per_sec: float
-    speed_violation: bool
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class SpeedViolationEvent:
     frame_number: int
     tracked_object: TrackedObject
     speed_limit: float
+    smoothed_speed_px_per_sec: float
     snapshot_path: Path | None = None
 
 
@@ -173,28 +175,72 @@ class SpeedHistory:
 
 
 class SpeedViolationMonitor:
-    """Raise violation events with per-track cooldown."""
+    """Smooth track speeds and raise confirmed violation events."""
 
     def __init__(
         self,
         speed_limit: float,
         cooldown_frames: int,
+        speed_window: int,
+        violation_frames: int,
+        startup_grace_frames: int,
+        one_alert_per_track: bool,
     ) -> None:
         self.speed_limit = speed_limit
         self.cooldown_frames = cooldown_frames
+        self.speed_window = speed_window
+        self.violation_frames = violation_frames
+        self.startup_grace_frames = startup_grace_frames
+        self.one_alert_per_track = one_alert_per_track
+        self.speed_samples: dict[int, deque[float]] = defaultdict(
+            lambda: deque(maxlen=self.speed_window)
+        )
+        self.above_limit_streak: dict[int, int] = defaultdict(int)
         self.last_alert_frame: dict[int, int] = {}
+        self.alerted_track_ids: set[int] = set()
+        self.unique_violator_ids: set[int] = set()
 
     def update(
         self,
         frame_number: int,
         tracked_objects: list[TrackedObject],
-    ) -> list[SpeedViolationEvent]:
-        """Return speed violation events for this frame."""
+    ) -> tuple[list[SpeedViolationEvent], dict[int, float], set[int]]:
+        """Return events, smoothed speeds and currently confirmed violators."""
         events: list[SpeedViolationEvent] = []
+        smoothed_speeds: dict[int, float] = {}
+        confirmed_violator_ids: set[int] = set()
+
         for tracked_object in tracked_objects:
             if tracked_object.class_id != 1:
                 continue
-            if tracked_object.speed_px_per_sec <= self.speed_limit:
+
+            samples = self.speed_samples[tracked_object.track_id]
+            samples.append(tracked_object.speed_px_per_sec)
+            smoothed_speed = float(statistics.median(samples))
+            smoothed_speeds[tracked_object.track_id] = smoothed_speed
+
+            if frame_number <= self.startup_grace_frames:
+                self.above_limit_streak[tracked_object.track_id] = 0
+                continue
+
+            if smoothed_speed > self.speed_limit:
+                self.above_limit_streak[tracked_object.track_id] += 1
+            else:
+                self.above_limit_streak[tracked_object.track_id] = 0
+
+            if (
+                self.above_limit_streak[tracked_object.track_id]
+                < self.violation_frames
+            ):
+                continue
+
+            confirmed_violator_ids.add(tracked_object.track_id)
+            self.unique_violator_ids.add(tracked_object.track_id)
+
+            if (
+                self.one_alert_per_track
+                and tracked_object.track_id in self.alerted_track_ids
+            ):
                 continue
 
             previous_alert_frame = self.last_alert_frame.get(
@@ -205,15 +251,17 @@ class SpeedViolationMonitor:
                     continue
 
             self.last_alert_frame[tracked_object.track_id] = frame_number
+            self.alerted_track_ids.add(tracked_object.track_id)
             events.append(
                 SpeedViolationEvent(
                     frame_number=frame_number,
                     tracked_object=tracked_object,
                     speed_limit=self.speed_limit,
+                    smoothed_speed_px_per_sec=smoothed_speed,
                 )
             )
 
-        return events
+        return events, smoothed_speeds, confirmed_violator_ids
 
 
 def create_output_paths(source_stem: str) -> tuple[Path, Path, Path]:
@@ -243,7 +291,6 @@ def extract_tracked_objects(
     history: SpeedHistory,
     frame_number: int,
     source_fps: float,
-    speed_limit: float,
 ) -> list[TrackedObject]:
     """Convert one tracking result into speed-aware objects."""
     tracked_objects: list[TrackedObject] = []
@@ -285,9 +332,6 @@ def extract_tracked_objects(
                 center_y=center_y,
                 direction=direction,
                 speed_px_per_sec=speed_px_per_sec,
-                speed_violation=(
-                    class_id == 1 and speed_px_per_sec > speed_limit
-                ),
             )
         )
 
@@ -297,18 +341,28 @@ def extract_tracked_objects(
 def draw_track(
     frame: object,
     tracked_object: TrackedObject,
+    smoothed_speed_px_per_sec: float,
+    speed_violation: bool,
     show_direction: bool,
 ) -> None:
     """Draw a tracked vehicle and speed label."""
     if tracked_object.class_id != 1:
         return
 
-    color = VIOLATION_COLOR if tracked_object.speed_violation else NORMAL_VEHICLE_COLOR
-    label_parts = [
-        f"ID {tracked_object.track_id}",
-        tracked_object.class_name,
-        f"{tracked_object.speed_px_per_sec:.0f} px/s",
-    ]
+    color = VIOLATION_COLOR if speed_violation else NORMAL_VEHICLE_COLOR
+    if speed_violation:
+        label_parts = [
+            "SPEED VIOLATION",
+            f"ID {tracked_object.track_id}",
+            tracked_object.class_name,
+            f"{smoothed_speed_px_per_sec:.0f} px/s",
+        ]
+    else:
+        label_parts = [
+            f"ID {tracked_object.track_id}",
+            tracked_object.class_name,
+            f"{smoothed_speed_px_per_sec:.0f} px/s",
+        ]
     if show_direction:
         label_parts.append(tracked_object.direction)
     label = " | ".join(label_parts)
@@ -318,7 +372,7 @@ def draw_track(
         (tracked_object.x1, tracked_object.y1),
         (tracked_object.x2, tracked_object.y2),
         color,
-        3 if tracked_object.speed_violation else 2,
+        3 if speed_violation else 2,
     )
     cv2.circle(
         frame,
@@ -391,7 +445,8 @@ def draw_panel(
     frame: object,
     speed_limit: float,
     active_vehicle_count: int,
-    violation_count: int,
+    unique_violator_count: int,
+    violation_event_count: int,
     fps: float,
 ) -> None:
     """Draw speed violation summary panel."""
@@ -399,7 +454,8 @@ def draw_panel(
         "Speed Violation Detection",
         f"Speed Limit: {speed_limit:.0f} px/s",
         f"Active Vehicles: {active_vehicle_count}",
-        f"Violations: {violation_count}",
+        f"Unique Violators: {unique_violator_count}",
+        f"Violation Events: {violation_event_count}",
         f"FPS: {fps:.1f}",
     ]
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -429,7 +485,11 @@ def draw_panel(
     cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
 
     for index, line in enumerate(lines):
-        color = VIOLATION_COLOR if line.startswith("Violations") else (255, 255, 255)
+        color = (
+            VIOLATION_COLOR
+            if line.startswith(("Unique Violators", "Violation Events"))
+            else (255, 255, 255)
+        )
         cv2.putText(
             frame,
             line,
@@ -476,6 +536,9 @@ def write_event_row(
             "track_id": tracked_object.track_id,
             "class": tracked_object.class_name,
             "speed_px_per_sec": f"{tracked_object.speed_px_per_sec:.6f}",
+            "smoothed_speed_px_per_sec": (
+                f"{event.smoothed_speed_px_per_sec:.6f}"
+            ),
             "speed_limit": f"{event.speed_limit:.6f}",
             "direction": tracked_object.direction,
             "event": "speed_violation",
@@ -497,7 +560,11 @@ def process_video(
     save_snapshots: bool,
     cooldown_frames: int,
     show_direction: bool,
-) -> tuple[Path, Path, Path, int, int]:
+    speed_window: int,
+    violation_frames: int,
+    startup_grace_frames: int,
+    one_alert_per_track: bool,
+) -> tuple[Path, Path, Path, int, int, int]:
     """Run speed violation detection and return output paths plus totals."""
     model_path = validate_file(model_path, "Model")
 
@@ -519,9 +586,13 @@ def process_video(
         monitor = SpeedViolationMonitor(
             speed_limit=speed_limit,
             cooldown_frames=cooldown_frames,
+            speed_window=speed_window,
+            violation_frames=violation_frames,
+            startup_grace_frames=startup_grace_frames,
+            one_alert_per_track=one_alert_per_track,
         )
         processed_frames = 0
-        violation_count = 0
+        violation_event_count = 0
         active_alert_message: AlertMessage | None = None
 
         try:
@@ -572,15 +643,28 @@ def process_video(
                         history,
                         processed_frames,
                         source_fps,
-                        speed_limit,
                     )
-                    events = monitor.update(processed_frames, tracked_objects)
+                    (
+                        events,
+                        smoothed_speeds,
+                        confirmed_violator_ids,
+                    ) = monitor.update(processed_frames, tracked_objects)
 
                     for tracked_object in tracked_objects:
-                        draw_track(frame, tracked_object, show_direction)
+                        smoothed_speed = smoothed_speeds.get(
+                            tracked_object.track_id,
+                            tracked_object.speed_px_per_sec,
+                        )
+                        draw_track(
+                            frame,
+                            tracked_object,
+                            smoothed_speed,
+                            tracked_object.track_id in confirmed_violator_ids,
+                            show_direction,
+                        )
 
                     for event in events:
-                        violation_count += 1
+                        violation_event_count += 1
                         active_alert_message = AlertMessage(
                             text=(
                                 "ALERT: Speed Violation Vehicle ID "
@@ -610,6 +694,9 @@ def process_video(
                                 frame_number=event.frame_number,
                                 tracked_object=event.tracked_object,
                                 speed_limit=event.speed_limit,
+                                smoothed_speed_px_per_sec=(
+                                    event.smoothed_speed_px_per_sec
+                                ),
                                 snapshot_path=snapshot_path,
                             ),
                         )
@@ -617,7 +704,9 @@ def process_video(
                     elapsed = time.perf_counter() - frame_started_at
                     instantaneous_fps = 1.0 / elapsed if elapsed > 0 else 0.0
                     active_vehicle_count = sum(
-                        1 for tracked_object in tracked_objects if tracked_object.class_id == 1
+                        1
+                        for tracked_object in tracked_objects
+                        if tracked_object.class_id == 1
                     )
                     draw_alert_banner(
                         frame,
@@ -628,7 +717,8 @@ def process_video(
                         frame,
                         speed_limit,
                         active_vehicle_count,
-                        violation_count,
+                        len(monitor.unique_violator_ids),
+                        violation_event_count,
                         instantaneous_fps,
                     )
                     history.prune(processed_frames)
@@ -648,7 +738,14 @@ def process_video(
         if processed_frames == 0:
             raise InferenceError("No frames could be read from the source video.")
 
-    return alert_dir, output_video_path, csv_path, processed_frames, violation_count
+    return (
+        alert_dir,
+        output_video_path,
+        csv_path,
+        processed_frames,
+        len(monitor.unique_violator_ids),
+        violation_event_count,
+    )
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -682,8 +779,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speed-limit",
         type=float,
-        default=120.0,
-        help="Speed limit in pixels per second (default: 120).",
+        default=360.0,
+        help="Speed limit in pixels per second (default: 360).",
     )
     parser.add_argument(
         "--min-track-frames",
@@ -710,6 +807,36 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=150,
         help="Frames before the same track can alert again (default: 150).",
+    )
+    parser.add_argument(
+        "--speed-window",
+        type=int,
+        default=5,
+        help="Rolling median window for speed smoothing (default: 5).",
+    )
+    parser.add_argument(
+        "--violation-frames",
+        type=int,
+        default=3,
+        help=(
+            "Consecutive smoothed speed evaluations required before alert "
+            "(default: 3)."
+        ),
+    )
+    parser.add_argument(
+        "--startup-grace-frames",
+        type=int,
+        default=30,
+        help="Frames to skip speed violation alerts at video start (default: 30).",
+    )
+    parser.add_argument(
+        "--one-alert-per-track",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Allow only one speed violation event per track "
+            "(default: true; use --no-one-alert-per-track to disable)."
+        ),
     )
     parser.add_argument(
         "--show-direction",
@@ -745,9 +872,25 @@ def main() -> int:
     if args.cooldown_frames < 0:
         LOGGER.error("--cooldown-frames cannot be negative.")
         return 2
+    if args.speed_window < 1:
+        LOGGER.error("--speed-window must be at least 1.")
+        return 2
+    if args.violation_frames < 1:
+        LOGGER.error("--violation-frames must be at least 1.")
+        return 2
+    if args.startup_grace_frames < 0:
+        LOGGER.error("--startup-grace-frames cannot be negative.")
+        return 2
 
     try:
-        alert_dir, output_video, csv_path, frames, violations = process_video(
+        (
+            alert_dir,
+            output_video,
+            csv_path,
+            frames,
+            unique_violators,
+            violation_events,
+        ) = process_video(
             source=args.source,
             model_path=args.model,
             confidence=args.conf,
@@ -758,16 +901,21 @@ def main() -> int:
             save_snapshots=args.save_snapshots,
             cooldown_frames=args.cooldown_frames,
             show_direction=args.show_direction,
+            speed_window=args.speed_window,
+            violation_frames=args.violation_frames,
+            startup_grace_frames=args.startup_grace_frames,
+            one_alert_per_track=args.one_alert_per_track,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
         return 1
 
-    LOGGER.info("Completed speed violation detection: %d frames", frames)
-    LOGGER.info("Speed violations: %d", violations)
-    LOGGER.info("Alert snapshots: %s", alert_dir)
-    LOGGER.info("Output video: %s", output_video)
-    LOGGER.info("CSV log: %s", csv_path)
+    LOGGER.info("Processed frames: %d", frames)
+    LOGGER.info("Unique violators: %d", unique_violators)
+    LOGGER.info("Violation events: %d", violation_events)
+    LOGGER.info("Output video path: %s", output_video)
+    LOGGER.info("CSV log path: %s", csv_path)
+    LOGGER.info("Snapshots folder: %s", alert_dir)
     return 0
 
 
