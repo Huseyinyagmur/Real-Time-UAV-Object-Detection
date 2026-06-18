@@ -597,6 +597,31 @@ gözetleme senaryoları için kullanılabilir. Warning durumunda sarı uyarı,
 crowd alert durumunda kırmızı alarm gösterilir. Aynı durum için sürekli alarm
 spam oluşmaması amacıyla `--cooldown-frames` kullanılır.
 
+Varsayılan sayım modu `--count-mode active_tracks` değeridir. Böylece crowd
+durumu video boyunca biriken benzersiz ID sayısına göre değil, o anda ROI içinde
+görünen ve en az `--min-track-frames` kadar stabilize olmuş aktif tracklere göre
+hesaplanır. Bu, yoğun kalabalıklarda ByteTrack ID kopmalarından kaynaklanan
+şişirilmiş sayımları azaltır.
+
+Video okunabilirliğini artırmak için kişi ID etiketleri varsayılan olarak
+gizlidir. Sadece kutular ve isteğe bağlı track çizgileri gösterilir. ID
+etiketlerini görmek için `--show-person-ids` kullanılabilir. ByteTrack kayıp
+track tamponu `--max-lost-frames` ile ayarlanabilir.
+
+Panelde şu dashboard metrikleri gösterilir:
+
+```text
+Current Persons in ROI
+Peak Persons in ROI
+Average Persons in ROI
+```
+
+Alert banner yalnızca durum yükseldiğinde gösterilir:
+
+- `NORMAL -> WARNING`
+- `WARNING -> CROWD ALERT`
+- `NORMAL -> CROWD ALERT`
+
 Crowd detection pipeline:
 
 ```text
@@ -618,6 +643,9 @@ CSV kolonları:
 frame,time_sec,active_persons_in_roi,unique_persons_in_roi,status,event,snapshot_path
 ```
 
+Özet JSON dosyasında ayrıca `peak_persons`, `average_persons`,
+`crowd_duration_sec` ve `warning_duration_sec` metrikleri bulunur.
+
 Varsayılan ROI:
 
 ```powershell
@@ -634,6 +662,12 @@ Daha hassas eşik:
 
 ```powershell
 python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --warning-threshold 3 --crowd-threshold 6
+```
+
+ID etiketleriyle debug görünümü:
+
+```powershell
+python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --show-person-ids
 ```
 
 ## Wrong Way Detection

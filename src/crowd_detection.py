@@ -49,6 +49,12 @@ CSV_COLUMNS = (
 STATUS_NORMAL = "normal"
 STATUS_WARNING = "warning"
 STATUS_CROWD_ALERT = "crowd_alert"
+COUNT_MODES = ("active_tracks", "unique_tracks")
+STATUS_SEVERITY = {
+    STATUS_NORMAL: 0,
+    STATUS_WARNING: 1,
+    STATUS_CROWD_ALERT: 2,
+}
 
 
 @dataclass(frozen=True)
@@ -105,17 +111,22 @@ class CrowdMonitor:
         crowd_threshold: int,
         min_track_frames: int,
         cooldown_frames: int,
+        count_mode: str,
     ) -> None:
         self.warning_threshold = warning_threshold
         self.crowd_threshold = crowd_threshold
         self.min_track_frames = min_track_frames
         self.cooldown_frames = cooldown_frames
+        self.count_mode = count_mode
         self.track_frames: dict[int, int] = defaultdict(int)
         self.unique_person_ids_in_roi: set[int] = set()
         self.last_event_frame: dict[str, int] = {}
+        self.last_status = STATUS_NORMAL
         self.warning_events = 0
         self.crowd_alert_events = 0
         self.max_persons_in_roi = 0
+        self.person_count_samples: list[int] = []
+        self.status_frame_counts: dict[str, int] = defaultdict(int)
 
     def update(
         self,
@@ -135,22 +146,21 @@ class CrowdMonitor:
 
         active_count = len(active_ids_in_roi)
         unique_count = len(self.unique_person_ids_in_roi)
+        count_for_status = (
+            unique_count if self.count_mode == "unique_tracks" else active_count
+        )
+        self.person_count_samples.append(active_count)
         self.max_persons_in_roi = max(self.max_persons_in_roi, active_count)
-        status = self.status_for_count(active_count)
+        status = self.status_for_count(count_for_status)
+        self.status_frame_counts[status] += 1
         snapshot = CrowdSnapshot(
             active_persons_in_roi=active_count,
             unique_persons_in_roi=unique_count,
             status=status,
         )
 
-        if status == STATUS_NORMAL:
-            return snapshot, None
-
-        previous_event_frame = self.last_event_frame.get(status)
-        if (
-            previous_event_frame is not None
-            and frame_number - previous_event_frame < self.cooldown_frames
-        ):
+        if not self.should_emit_event(frame_number, status):
+            self.last_status = status
             return snapshot, None
 
         self.last_event_frame[status] = frame_number
@@ -166,7 +176,19 @@ class CrowdMonitor:
             active_persons_in_roi=active_count,
             unique_persons_in_roi=unique_count,
         )
+        self.last_status = status
         return snapshot, event
+
+    def should_emit_event(self, frame_number: int, status: str) -> bool:
+        """Return whether a compact banner/event should be emitted."""
+        if status == STATUS_NORMAL:
+            return False
+        if STATUS_SEVERITY[status] <= STATUS_SEVERITY[self.last_status]:
+            return False
+        previous_event_frame = self.last_event_frame.get(status)
+        if previous_event_frame is None:
+            return True
+        return frame_number - previous_event_frame >= self.cooldown_frames
 
     def status_for_count(self, count: int) -> str:
         """Return crowd status from active ROI person count."""
@@ -175,6 +197,18 @@ class CrowdMonitor:
         if count >= self.warning_threshold:
             return STATUS_WARNING
         return STATUS_NORMAL
+
+    def average_persons(self) -> float:
+        """Return average active persons in ROI."""
+        if not self.person_count_samples:
+            return 0.0
+        return sum(self.person_count_samples) / len(self.person_count_samples)
+
+    def status_duration_sec(self, status: str, fps: float) -> float:
+        """Return duration in seconds for one crowd status."""
+        if fps <= 0:
+            return 0.0
+        return self.status_frame_counts[status] / fps
 
 
 def create_output_paths(source_stem: str) -> tuple[Path, Path, Path, Path]:
@@ -188,6 +222,28 @@ def create_output_paths(source_stem: str) -> tuple[Path, Path, Path, Path]:
         DEFAULT_LOG_DIR / "crowd_detection_events.csv",
         DEFAULT_LOG_DIR / f"{source_stem}_crowd_summary.json",
     )
+
+
+def create_tracker_config(max_lost_frames: int) -> Path:
+    """Create a ByteTrack config with a custom lost-track buffer."""
+    DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    tracker_path = DEFAULT_LOG_DIR / "crowd_bytetrack.yaml"
+    tracker_path.write_text(
+        "\n".join(
+            (
+                "tracker_type: bytetrack",
+                "track_high_thresh: 0.25",
+                "track_low_thresh: 0.1",
+                "new_track_thresh: 0.25",
+                f"track_buffer: {max_lost_frames}",
+                "match_thresh: 0.8",
+                "fuse_score: True",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return tracker_path
 
 
 def build_roi(
@@ -295,6 +351,7 @@ def draw_person(
     history: TrackHistory,
     status: str,
     show_tracks: bool,
+    show_person_ids: bool,
 ) -> None:
     """Draw one person and optional trajectory."""
     color = color_for_status(status) if person.in_roi else PERSON_COLOR
@@ -306,6 +363,9 @@ def draw_person(
         points = history.get_points(person.track_id)[-20:]
         for start, end in zip(points, points[1:]):
             cv2.line(frame, start, end, color, 2, cv2.LINE_AA)
+
+    if not show_person_ids:
+        return
 
     label = f"Person ID {person.track_id}"
     (text_width, text_height), baseline = cv2.getTextSize(
@@ -338,6 +398,7 @@ def draw_panel(
     frame: object,
     roi: ROI,
     snapshot: CrowdSnapshot,
+    monitor: CrowdMonitor,
     warning_threshold: int,
     crowd_threshold: int,
     fps: float,
@@ -347,8 +408,9 @@ def draw_panel(
         "Crowd Detection",
         f"ROI: {roi.name}",
         f"Status: {status_label(snapshot.status)}",
-        f"Persons in ROI: {snapshot.active_persons_in_roi}",
-        f"Unique Persons: {snapshot.unique_persons_in_roi}",
+        f"Current Persons in ROI: {snapshot.active_persons_in_roi}",
+        f"Peak Persons in ROI: {monitor.max_persons_in_roi}",
+        f"Average Persons in ROI: {monitor.average_persons():.1f}",
         f"Warning Threshold: {warning_threshold}",
         f"Crowd Threshold: {crowd_threshold}",
         f"FPS: {fps:.1f}",
@@ -479,6 +541,16 @@ def write_summary(
         "warning_threshold": warning_threshold,
         "crowd_threshold": crowd_threshold,
         "max_persons_in_roi": monitor.max_persons_in_roi,
+        "peak_persons": monitor.max_persons_in_roi,
+        "average_persons": monitor.average_persons(),
+        "crowd_duration_sec": monitor.status_duration_sec(
+            STATUS_CROWD_ALERT,
+            fps,
+        ),
+        "warning_duration_sec": monitor.status_duration_sec(
+            STATUS_WARNING,
+            fps,
+        ),
         "total_warning_events": monitor.warning_events,
         "total_crowd_alert_events": monitor.crowd_alert_events,
         "unique_persons_in_roi": len(monitor.unique_person_ids_in_roi),
@@ -503,6 +575,9 @@ def process_video(
     min_track_frames: int,
     cooldown_frames: int,
     show_tracks: bool,
+    show_person_ids: bool,
+    count_mode: str,
+    max_lost_frames: int,
 ) -> tuple[Path, Path, Path, Path, int, CrowdMonitor]:
     """Run crowd detection and write video/CSV/summary outputs."""
     model_path = validate_file(model_path, "Model")
@@ -520,11 +595,13 @@ def process_video(
         capture = open_video(prepared_source.path)
         writer: cv2.VideoWriter | None = None
         history = TrackHistory()
+        tracker_config = create_tracker_config(max_lost_frames)
         monitor = CrowdMonitor(
             warning_threshold=warning_threshold,
             crowd_threshold=crowd_threshold,
             min_track_frames=min_track_frames,
             cooldown_frames=cooldown_frames,
+            count_mode=count_mode,
         )
         processed_frames = 0
         active_alert_message: AlertMessage | None = None
@@ -556,7 +633,7 @@ def process_video(
                         results = model.track(
                             source=frame,
                             persist=True,
-                            tracker="bytetrack.yaml",
+                            tracker=str(tracker_config),
                             conf=confidence,
                             imgsz=image_size,
                             classes=[PERSON_CLASS_ID],
@@ -590,6 +667,7 @@ def process_video(
                             history,
                             snapshot.status,
                             show_tracks,
+                            show_person_ids,
                         )
 
                     event_with_snapshot = event
@@ -645,6 +723,7 @@ def process_video(
                         frame,
                         roi,
                         snapshot,
+                        monitor,
                         warning_threshold,
                         crowd_threshold,
                         instantaneous_fps,
@@ -762,8 +841,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-track-frames",
         type=int,
-        default=5,
-        help="Frames required before counting a track in ROI (default: 5).",
+        default=10,
+        help="Frames required before counting a track in ROI (default: 10).",
     )
     parser.add_argument(
         "--cooldown-frames",
@@ -776,6 +855,24 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Draw recent trajectory lines (default: true).",
+    )
+    parser.add_argument(
+        "--show-person-ids",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Draw Person ID labels above boxes (default: false).",
+    )
+    parser.add_argument(
+        "--count-mode",
+        choices=COUNT_MODES,
+        default="active_tracks",
+        help="Count active visible tracks or cumulative unique tracks.",
+    )
+    parser.add_argument(
+        "--max-lost-frames",
+        type=int,
+        default=30,
+        help="ByteTrack frames to keep lost tracks alive (default: 30).",
     )
     return parser
 
@@ -806,6 +903,9 @@ def main() -> int:
     if args.cooldown_frames < 0:
         LOGGER.error("--cooldown-frames cannot be negative.")
         return 2
+    if args.max_lost_frames < 1:
+        LOGGER.error("--max-lost-frames must be at least 1.")
+        return 2
 
     try:
         (
@@ -829,6 +929,9 @@ def main() -> int:
             min_track_frames=args.min_track_frames,
             cooldown_frames=args.cooldown_frames,
             show_tracks=args.show_tracks,
+            show_person_ids=args.show_person_ids,
+            count_mode=args.count_mode,
+            max_lost_frames=args.max_lost_frames,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)
