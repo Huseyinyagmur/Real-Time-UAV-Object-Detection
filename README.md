@@ -585,6 +585,57 @@ Bisikletli/person karışmasını ve ID switch tekrar alarmlarını azaltan örn
 python src/pedestrian_zone_intrusion.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --ignore-fast-person --max-person-speed 180 --reentry-cooldown-frames 120
 ```
 
+## Crowd Detection
+
+Crowd Detection, belirlenen ROI içindeki kişi yoğunluğunu takip eder. Sistem
+yalnızca `Person` sınıfını analiz eder; `Vehicle` tespitleri bu modda
+kullanılmaz. ROI içindeki aktif kişi sayısı eşiklere göre `normal`, `warning`
+veya `crowd_alert` durumuna çevrilir.
+
+Bu özellik güvenlik, kalabalık yönetimi, kampüs/etkinlik izleme ve İHA tabanlı
+gözetleme senaryoları için kullanılabilir. Warning durumunda sarı uyarı,
+crowd alert durumunda kırmızı alarm gösterilir. Aynı durum için sürekli alarm
+spam oluşmaması amacıyla `--cooldown-frames` kullanılır.
+
+Crowd detection pipeline:
+
+```text
+src/crowd_detection.py
+```
+
+Çıktılar:
+
+```text
+outputs/videos/<video_adi>_crowd_detection.mp4
+outputs/logs/crowd_detection_events.csv
+outputs/logs/<video_adi>_crowd_summary.json
+outputs/alerts/<video_adi>_frame000123_crowd_alert.jpg
+```
+
+CSV kolonları:
+
+```text
+frame,time_sec,active_persons_in_roi,unique_persons_in_roi,status,event,snapshot_path
+```
+
+Varsayılan ROI:
+
+```powershell
+python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960
+```
+
+Özel ROI:
+
+```powershell
+python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --roi 500,300,1600,900 --roi-name "Crosswalk Zone"
+```
+
+Daha hassas eşik:
+
+```powershell
+python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --warning-threshold 3 --crowd-threshold 6
+```
+
 ## Wrong Way Detection
 
 Wrong Way Detection, beklenen trafik yönünü kullanıcıdan alır ve ByteTrack ile
@@ -891,6 +942,7 @@ UAV_Object_Detection/
 │   ├── yolo11n_4class_960/
 │   └── yolo11s_4class_960/
 ├── src/
+│   ├── crowd_detection.py
 │   ├── convert_visdrone_2class.py
 │   ├── convert_visdrone_4class.py
 │   ├── generate_heatmap.py

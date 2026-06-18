@@ -22,3 +22,4 @@ outputs/logs/
 data/sample_videos/
 .qa_speed_review 
 .qa_speed_review_new
+.qa_ped_intrusion_review
