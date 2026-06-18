@@ -69,28 +69,28 @@ mAP50-95: 0.407
 Projede VisDrone2019 Detection veri seti kullanılmıştır. Güncel final veri seti
 2 sınıflıdır:
 
-| VisDrone sınıfı | YOLO ID | Final sınıf |
-| --- | ---: | --- |
-| pedestrian, people | 0 | person |
-| car, van, truck, bus, motor | 1 | vehicle |
+| VisDrone Sınıfı          | YOLO ID | Final Sınıf |
+| ------------------------ | ------: | ----------- |
+| pedestrian, people       |       0 | person      |
+| car, van, truck, bus, motor |    1 | vehicle     |
 
 `bicycle`, `tricycle` ve `awning-tricycle` sınıfları final 2-class veri
 setinden çıkarılmıştır.
 
 ### Veri Seti İstatistikleri
 
-| Bölüm | Görüntü sayısı |
-| --- | ---: |
-| Eğitim | 6.471 |
-| Doğrulama | 548 |
-| Test | 1.610 |
+| Bölüm      | Görüntü Sayısı |
+| ---------- | -------------: |
+| Eğitim     |          6.471 |
+| Doğrulama  |            548 |
+| Test       |          1.610 |
 
 2-class veri setinde toplam **433.232 annotation** bulunmaktadır:
 
-| Sınıf | Annotation sayısı |
-| --- | ---: |
-| person | 147.747 |
-| vehicle | 285.485 |
+| Sınıf   | Annotation Sayısı |
+| ------- | ----------------: |
+| person  |           147.747 |
+| vehicle |           285.485 |
 
 Önceki 4-class deney setinde `Person`, `Car`, `Truck` ve `Bus` sınıfları ayrı
 tutulmuştur. Bu sürüm karşılaştırma ve deney amaçlı korunmaktadır.
@@ -123,13 +123,13 @@ dataset/yolo_4class/
 
 ## Model Karşılaştırma Sonuçları
 
-| Model | Epoch | Input Size | Precision | Recall | mAP50 | mAP50-95 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| YOLOv8n | 50 | 640 | 0.634 | 0.433 | 0.470 | 0.279 |
-| YOLOv8s | 50 | 640 | 0.688 | 0.514 | 0.552 | 0.342 |
-| YOLO11n | 50 | 960 | 0.682 | 0.524 | 0.568 | 0.359 |
-| YOLO11s (4-class) | 50 | 960 | 0.747 | 0.582 | 0.638 | 0.415 |
-| **YOLO11s (2-class)** | **50** | **960** | **0.787** | **0.638** | **0.710** | **0.407** |
+| Model                   | Epoch | Input Size | Precision | Recall | mAP50 | mAP50-95 |
+| ----------------------- | ----: | ---------: | --------: | -----: | ----: | -------: |
+| YOLOv8n                 |    50 |        640 |     0.634 |  0.433 | 0.470 |    0.279 |
+| YOLOv8s                 |    50 |        640 |     0.688 |  0.514 | 0.552 |    0.342 |
+| YOLO11n                 |    50 |        960 |     0.682 |  0.524 | 0.568 |    0.359 |
+| YOLO11s (4-class)       |    50 |        960 |     0.747 |  0.582 | 0.638 |    0.415 |
+| **YOLO11s (2-class)**   | **50** |    **960** | **0.787** | **0.638** | **0.710** | **0.407** |
 
 - YOLO11s 4-Class modeli mAP50-95 metriğinde çok az daha yüksek sonuç üretmiştir.
 - Ancak final sistemin amacı `person` ve `vehicle` tespiti ile kararlı takip yapmaktır.
@@ -159,19 +159,19 @@ sağlamış ve projenin final modeli olarak seçilmiştir.
 
 ### Genel Sonuçlar
 
-| Metrik | Sonuç |
-| --- | ---: |
+| Metrik    | Sonuç |
+| --------- | ----: |
 | Precision | 0.787 |
-| Recall | 0.638 |
-| mAP50 | 0.710 |
-| mAP50-95 | 0.407 |
+| Recall    | 0.638 |
+| mAP50     | 0.710 |
+| mAP50-95  | 0.407 |
 
 ### Sınıf Bazında Sonuçlar
 
-| Sınıf | Precision | Recall | mAP50 | mAP50-95 |
-| --- | ---: | ---: | ---: | ---: |
-| Person | 0.731 | 0.537 | 0.602 | 0.267 |
-| Vehicle | 0.842 | 0.740 | 0.818 | 0.547 |
+| Sınıf   | Precision | Recall | mAP50 | mAP50-95 |
+| ------- | --------: | -----: | ----: | -------: |
+| Person  |     0.731 |  0.537 | 0.602 |    0.267 |
+| Vehicle |     0.842 |  0.740 | 0.818 |    0.547 |
 
 Önceki YOLO11s 4-class modeli başarılı bir deney olarak korunmaktadır; ancak
 final sistemde person/vehicle ayrımı kullanılmaktadır.
@@ -1100,11 +1100,10 @@ formatında dışa aktarır.
 - Kamera hareketi telafisi
 - Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
-- ROI (Region of Interest) sayımı
-- Trafik yoğunluğu heatmap üretimi
-- Çoklu ROI (Region of Interest) bölgeleri
-- ROI bazlı heatmap analizi
-- Çoklu line crossing bölgeleri
+- ROI sayımı için çoklu bölge ve poligon ROI desteği
+- Traffic heatmap için ROI bazlı filtreleme ve zaman aralığı analizi
+- Dashboard raporu için otomatik demo karşılaştırma ve trend analizi
+- Çoklu line crossing bölgeleri ve bölge bazlı geçiş raporları
 - Canlı kamera ve RTSP akış desteği
 - Streamlit tabanlı web dashboard
 - SAHI ile küçük nesne tespiti optimizasyonu
