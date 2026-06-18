@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,7 @@ CSV_COLUMNS = (
     "center_y",
     "event",
     "snapshot_path",
+    "filtered_reason",
 )
 
 
@@ -56,6 +58,9 @@ class PersonTrack:
     y2: int
     center_x: int
     center_y: int
+    speed_px_per_sec: float
+    box_area_ratio: float
+    box_aspect: float
     in_roi: bool
 
 
@@ -66,6 +71,7 @@ class IntrusionEvent:
     frame_number: int
     person: PersonTrack
     event: str
+    filtered_reason: str = "none"
     snapshot_path: Path | None = None
 
 
@@ -74,15 +80,32 @@ class AlertMessage:
     """A visual alert message kept on screen for several frames."""
 
     person_id: int
+    text: str
     expires_at_frame: int
+
+
+@dataclass(frozen=True)
+class PersonAlertFilters:
+    """Optional filters to reduce false pedestrian intrusion alerts."""
+
+    ignore_fast_person: bool = False
+    max_person_speed: float = 180.0
+    max_person_box_area_ratio: float = 0.08
+    min_person_box_aspect: float = 0.25
+    max_person_box_aspect: float = 1.2
+    reentry_cooldown_frames: int = 120
+    duplicate_distance_threshold: float = 80.0
 
 
 class PedestrianIntrusionMonitor:
     """Detect enter events every time a person crosses into the ROI."""
 
-    def __init__(self) -> None:
+    def __init__(self, filters: PersonAlertFilters) -> None:
+        self.filters = filters
         self.previous_roi_state: dict[int, bool] = {}
         self.unique_person_ids: set[int] = set()
+        self.active_intrusion_ids: set[int] = set()
+        self.recent_alerts: list[tuple[int, int, int, int]] = []
 
     def update(
         self,
@@ -95,15 +118,65 @@ class PedestrianIntrusionMonitor:
             self.unique_person_ids.add(person.track_id)
             previous_state = self.previous_roi_state.get(person.track_id, False)
             if not previous_state and person.in_roi:
+                filtered_reason = self.filtered_reason(frame_number, person)
                 events.append(
                     IntrusionEvent(
                         frame_number=frame_number,
                         person=person,
                         event="enter",
+                        filtered_reason=filtered_reason,
                     )
                 )
+                if filtered_reason == "none":
+                    self.active_intrusion_ids.add(person.track_id)
+                    self.recent_alerts.append(
+                        (
+                            frame_number,
+                            person.track_id,
+                            person.center_x,
+                            person.center_y,
+                        )
+                    )
+            elif previous_state and not person.in_roi:
+                self.active_intrusion_ids.discard(person.track_id)
             self.previous_roi_state[person.track_id] = person.in_roi
         return events
+
+    def filtered_reason(self, frame_number: int, person: PersonTrack) -> str:
+        """Return why an enter candidate should not alert."""
+        if (
+            self.filters.ignore_fast_person
+            and person.speed_px_per_sec > self.filters.max_person_speed
+        ):
+            return "fast_person"
+        if person.box_area_ratio > self.filters.max_person_box_area_ratio:
+            return "large_box"
+        if not (
+            self.filters.min_person_box_aspect
+            <= person.box_aspect
+            <= self.filters.max_person_box_aspect
+        ):
+            return "aspect_ratio"
+        if self.is_duplicate_alert(frame_number, person):
+            return "duplicate_alert"
+        return "none"
+
+    def is_duplicate_alert(self, frame_number: int, person: PersonTrack) -> bool:
+        """Return whether an enter candidate is likely an ID-switch duplicate."""
+        self.recent_alerts = [
+            alert
+            for alert in self.recent_alerts
+            if frame_number - alert[0] <= self.filters.reentry_cooldown_frames
+        ]
+        for alert_frame, alert_track_id, alert_x, alert_y in self.recent_alerts:
+            if alert_track_id == person.track_id:
+                continue
+            if frame_number - alert_frame > self.filters.reentry_cooldown_frames:
+                continue
+            distance = math.hypot(person.center_x - alert_x, person.center_y - alert_y)
+            if distance <= self.filters.duplicate_distance_threshold:
+                return True
+        return False
 
 
 def create_output_paths(source_stem: str) -> tuple[Path, Path, Path]:
@@ -147,6 +220,8 @@ def extract_person_tracks(
     roi: ROI,
     frame_number: int,
     source_fps: float,
+    frame_width: int,
+    frame_height: int,
 ) -> list[PersonTrack]:
     """Extract tracked person objects from one ByteTrack result."""
     persons: list[PersonTrack] = []
@@ -165,7 +240,15 @@ def extract_person_tracks(
         center_x = round((x1_float + x2_float) / 2.0)
         center_y = round((y1_float + y2_float) / 2.0)
         track_id = int(box.id.item())
-        history.update(track_id, (center_x, center_y), frame_number, source_fps)
+        _, speed_px_per_sec = history.update(
+            track_id,
+            (center_x, center_y),
+            frame_number,
+            source_fps,
+        )
+        box_width = max(x2_float - x1_float, 1.0)
+        box_height = max(y2_float - y1_float, 1.0)
+        frame_area = max(frame_width * frame_height, 1)
         persons.append(
             PersonTrack(
                 track_id=track_id,
@@ -176,6 +259,9 @@ def extract_person_tracks(
                 y2=round(y2_float),
                 center_x=center_x,
                 center_y=center_y,
+                speed_px_per_sec=speed_px_per_sec,
+                box_area_ratio=(box_width * box_height) / frame_area,
+                box_aspect=box_width / box_height,
                 in_roi=roi.contains(center_x, center_y),
             )
         )
@@ -198,10 +284,10 @@ def draw_roi(frame: object, roi: ROI) -> None:
     )
 
 
-def draw_person(frame: object, person: PersonTrack) -> None:
+def draw_person(frame: object, person: PersonTrack, alert_active: bool) -> None:
     """Draw one tracked person."""
-    color = ALERT_COLOR if person.in_roi else PERSON_COLOR
-    thickness = 3 if person.in_roi else 2
+    color = ALERT_COLOR if alert_active else PERSON_COLOR
+    thickness = 3 if alert_active else 2
     label = f"Person ID {person.track_id}"
     cv2.rectangle(frame, (person.x1, person.y1), (person.x2, person.y2), color, thickness)
     cv2.circle(frame, (person.center_x, person.center_y), 4, color, -1)
@@ -249,10 +335,10 @@ def draw_alert_banner(
     cv2.addWeighted(overlay, 0.82, frame, 0.18, 0, frame)
     cv2.putText(
         frame,
-        "ALERT:",
+        alert_message.text,
         (round(24 * scale), round(44 * scale)),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.95 * scale,
+        0.82 * scale,
         (255, 255, 255),
         max(3, round(3 * scale)),
         cv2.LINE_AA,
@@ -308,6 +394,7 @@ def write_event_row(csv_writer: csv.DictWriter, event: IntrusionEvent) -> None:
             "center_y": event.person.center_y,
             "event": event.event,
             "snapshot_path": str(event.snapshot_path or ""),
+            "filtered_reason": event.filtered_reason,
         }
     )
 
@@ -320,6 +407,7 @@ def process_video(
     roi_values: tuple[int, int, int, int] | None,
     alert_display_frames: int,
     save_snapshots: bool,
+    filters: PersonAlertFilters,
 ) -> tuple[Path, Path, Path, int, int, int]:
     """Run pedestrian restricted-zone intrusion monitoring."""
     model_path = validate_file(model_path, "Model")
@@ -337,7 +425,7 @@ def process_video(
         capture = open_video(prepared_source.path)
         writer: cv2.VideoWriter | None = None
         history = TrackHistory()
-        monitor = PedestrianIntrusionMonitor()
+        monitor = PedestrianIntrusionMonitor(filters)
         processed_frames = 0
         intrusion_events = 0
         active_alert_message: AlertMessage | None = None
@@ -388,41 +476,54 @@ def process_video(
                         roi,
                         processed_frames,
                         source_fps,
+                        width,
+                        height,
                     )
                     events = monitor.update(processed_frames, persons)
 
                     draw_roi(frame, roi)
                     for person in persons:
-                        draw_person(frame, person)
+                        draw_person(
+                            frame,
+                            person,
+                            person.track_id in monitor.active_intrusion_ids,
+                        )
 
                     for event in events:
-                        intrusion_events += 1
-                        active_alert_message = AlertMessage(
-                            person_id=event.person.track_id,
-                            expires_at_frame=(
-                                processed_frames + alert_display_frames
-                            ),
-                        )
                         snapshot_path = None
-                        if save_snapshots:
-                            snapshot_frame = frame.copy()
-                            draw_alert_banner(
-                                snapshot_frame,
-                                active_alert_message,
-                                processed_frames,
+                        if event.filtered_reason == "none":
+                            intrusion_events += 1
+                            alert_text = (
+                                "ALERT: Person ID "
+                                f"{event.person.track_id} entered {roi.name}"
                             )
-                            snapshot_path = save_snapshot(
-                                snapshot_frame,
-                                alert_dir,
-                                prepared_source.output_stem,
-                                event,
+                            active_alert_message = AlertMessage(
+                                person_id=event.person.track_id,
+                                text=alert_text,
+                                expires_at_frame=(
+                                    processed_frames + alert_display_frames
+                                ),
                             )
+                            if save_snapshots:
+                                snapshot_frame = frame.copy()
+                                draw_alert_banner(
+                                    snapshot_frame,
+                                    active_alert_message,
+                                    processed_frames,
+                                )
+                                snapshot_path = save_snapshot(
+                                    snapshot_frame,
+                                    alert_dir,
+                                    prepared_source.output_stem,
+                                    event,
+                                )
                         write_event_row(
                             csv_writer,
                             IntrusionEvent(
                                 frame_number=event.frame_number,
                                 person=event.person,
                                 event=event.event,
+                                filtered_reason=event.filtered_reason,
                                 snapshot_path=snapshot_path,
                             ),
                         )
@@ -515,6 +616,47 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=True,
         help="Save alert snapshots on enter events (default: true).",
     )
+    parser.add_argument(
+        "--ignore-fast-person",
+        action="store_true",
+        help="Suppress alerts for person tracks moving faster than max speed.",
+    )
+    parser.add_argument(
+        "--max-person-speed",
+        type=float,
+        default=180.0,
+        help="Max allowed person speed in px/s when fast-person filter is active.",
+    )
+    parser.add_argument(
+        "--max-person-box-area-ratio",
+        type=float,
+        default=0.08,
+        help="Suppress alerts when person bbox area exceeds this frame ratio.",
+    )
+    parser.add_argument(
+        "--min-person-box-aspect",
+        type=float,
+        default=0.25,
+        help="Minimum allowed person bbox width/height ratio.",
+    )
+    parser.add_argument(
+        "--max-person-box-aspect",
+        type=float,
+        default=1.2,
+        help="Maximum allowed person bbox width/height ratio.",
+    )
+    parser.add_argument(
+        "--reentry-cooldown-frames",
+        type=int,
+        default=120,
+        help="Frames to suppress near-duplicate re-entry alerts (default: 120).",
+    )
+    parser.add_argument(
+        "--duplicate-distance-threshold",
+        type=float,
+        default=80.0,
+        help="Pixel distance for duplicate alert suppression (default: 80).",
+    )
     return parser
 
 
@@ -532,6 +674,37 @@ def main() -> int:
     if args.alert_display_frames < 1:
         LOGGER.error("--alert-display-frames must be at least 1.")
         return 2
+    if args.max_person_speed <= 0:
+        LOGGER.error("--max-person-speed must be greater than zero.")
+        return 2
+    if not 0.0 < args.max_person_box_area_ratio <= 1.0:
+        LOGGER.error("--max-person-box-area-ratio must be between 0 and 1.")
+        return 2
+    if args.min_person_box_aspect <= 0:
+        LOGGER.error("--min-person-box-aspect must be greater than zero.")
+        return 2
+    if args.max_person_box_aspect < args.min_person_box_aspect:
+        LOGGER.error(
+            "--max-person-box-aspect must be greater than or equal to "
+            "--min-person-box-aspect."
+        )
+        return 2
+    if args.reentry_cooldown_frames < 0:
+        LOGGER.error("--reentry-cooldown-frames cannot be negative.")
+        return 2
+    if args.duplicate_distance_threshold <= 0:
+        LOGGER.error("--duplicate-distance-threshold must be greater than zero.")
+        return 2
+
+    filters = PersonAlertFilters(
+        ignore_fast_person=args.ignore_fast_person,
+        max_person_speed=args.max_person_speed,
+        max_person_box_area_ratio=args.max_person_box_area_ratio,
+        min_person_box_aspect=args.min_person_box_aspect,
+        max_person_box_aspect=args.max_person_box_aspect,
+        reentry_cooldown_frames=args.reentry_cooldown_frames,
+        duplicate_distance_threshold=args.duplicate_distance_threshold,
+    )
 
     try:
         (
@@ -549,6 +722,7 @@ def main() -> int:
             roi_values=args.roi,
             alert_display_frames=args.alert_display_frames,
             save_snapshots=args.save_snapshots,
+            filters=filters,
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)

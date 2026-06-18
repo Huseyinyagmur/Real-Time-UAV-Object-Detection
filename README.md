@@ -524,6 +524,25 @@ Person entered restricted zone
 Person ID 12
 ```
 
+Bisikletli kişiler bazı sahnelerde model tarafından `Person` olarak
+algılanabilir. Bu tür yanlış alarmları azaltmak için opsiyonel filtreler
+kullanılabilir:
+
+- `--ignore-fast-person`
+- `--max-person-speed`
+- `--max-person-box-area-ratio`
+- `--min-person-box-aspect`
+- `--max-person-box-aspect`
+
+Bu filtreler yalnızca alarm üretimini engeller; tespit ve takip akışı devam
+eder. Track ID kopması nedeniyle aynı kişiye yakın konumda kısa süre içinde yeni
+ID atanırsa `--reentry-cooldown-frames` ve `--duplicate-distance-threshold`
+parametreleri duplicate alert üretimini azaltır.
+
+ROI alanı sahneye göre daraltılmalıdır. Yaya geçidi, kaldırım veya normal yaya
+akışının olduğu bölgeler `Restricted Area` yapılırsa normal yayalar da intrusion
+olarak sayılır.
+
 Pedestrian intrusion pipeline:
 
 ```text
@@ -541,8 +560,12 @@ outputs/videos/<video_adi>_pedestrian_intrusion.mp4
 CSV kolonları:
 
 ```text
-frame,track_id,center_x,center_y,event,snapshot_path
+frame,track_id,center_x,center_y,event,snapshot_path,filtered_reason
 ```
+
+`filtered_reason` değeri `none`, `fast_person`, `large_box`, `aspect_ratio` veya
+`duplicate_alert` olabilir. Sadece `none` olan girişler gerçek alarm, snapshot ve
+kırmızı alert banner üretir.
 
 Örnek kullanım:
 
@@ -554,6 +577,12 @@ python src/pedestrian_zone_intrusion.py --source data/sample_videos/test5.mp4 --
 
 ```powershell
 python src/pedestrian_zone_intrusion.py --source data/sample_videos/test5.mp4 --model models/yolo11s_2class_960_best.pt --roi 500,300,1600,900
+```
+
+Bisikletli/person karışmasını ve ID switch tekrar alarmlarını azaltan örnek:
+
+```powershell
+python src/pedestrian_zone_intrusion.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.40 --imgsz 960 --ignore-fast-person --max-person-speed 180 --reentry-cooldown-frames 120
 ```
 
 ## Wrong Way Detection
