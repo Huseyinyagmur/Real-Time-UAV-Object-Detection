@@ -951,6 +951,11 @@ raporları, speed violation logları, wrong-way olayları, ROI intrusion kayıtl
 pedestrian intrusion kayıtları, crowd detection summary dosyaları ve varsa
 heatmap görselleri referans olarak kullanılır.
 
+Bu dashboard, farklı demo videolarından üretilen analiz çıktılarını özetlemek
+için oluşturulmuştur.
+
+![Project Dashboard](outputs/dashboard/project_dashboard.png)
+
 Dashboard pipeline:
 
 ```text

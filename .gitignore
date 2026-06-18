@@ -13,7 +13,9 @@ models/*
 
 # Runtime inference outputs
 outputs/alerts/
-outputs/dashboard/
+outputs/dashboard/*
+!outputs/dashboard/project_dashboard.png
+!outputs/dashboard/project_summary.json
 outputs/heatmaps/
 outputs/reports/
 outputs/videos/

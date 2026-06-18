@@ -52,6 +52,16 @@ def resolve_path(path_value: str) -> Path:
     return PROJECT_ROOT / path
 
 
+def project_relative_path(path: Path | None) -> str | None:
+    """Return a project-relative POSIX-style path when possible."""
+    if path is None:
+        return None
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def latest_file(directory: Path, pattern: str) -> Path | None:
     """Return the newest matching file from a directory."""
     if not directory.exists():
@@ -255,7 +265,7 @@ def collect_dashboard_data(
     heatmap_files = []
     if heatmaps_dir.exists():
         heatmap_files = [
-            str(path.relative_to(PROJECT_ROOT))
+            project_relative_path(path) or path.as_posix()
             for path in sorted(heatmaps_dir.glob("*.png"))
         ]
 
@@ -277,16 +287,26 @@ def collect_dashboard_data(
             "crowd_person_density_summary": crowd_summary_values,
         },
         "sources": {
-            "traffic_flow_summary": str(flow_summary_path) if flow_summary_path else None,
-            "traffic_flow_timeline": str(flow_timeline_path) if flow_timeline_path else None,
-            "crowd_summary": str(crowd_summary_path) if crowd_summary_path else None,
-            "speed_violations_csv": str(speed_csv_path) if speed_csv_path.exists() else None,
-            "wrong_way_csv": str(wrong_way_csv_path) if wrong_way_csv_path.exists() else None,
+            "traffic_flow_summary": project_relative_path(flow_summary_path),
+            "traffic_flow_timeline": project_relative_path(flow_timeline_path),
+            "crowd_summary": project_relative_path(crowd_summary_path),
+            "speed_violations_csv": (
+                project_relative_path(speed_csv_path)
+                if speed_csv_path.exists()
+                else None
+            ),
+            "wrong_way_csv": (
+                project_relative_path(wrong_way_csv_path)
+                if wrong_way_csv_path.exists()
+                else None
+            ),
             "roi_intrusion_csv": (
-                str(roi_intrusion_csv_path) if roi_intrusion_csv_path.exists() else None
+                project_relative_path(roi_intrusion_csv_path)
+                if roi_intrusion_csv_path.exists()
+                else None
             ),
             "pedestrian_intrusion_csv": (
-                str(pedestrian_intrusion_csv_path)
+                project_relative_path(pedestrian_intrusion_csv_path)
                 if pedestrian_intrusion_csv_path.exists()
                 else None
             ),
