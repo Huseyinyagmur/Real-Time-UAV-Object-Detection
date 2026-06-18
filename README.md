@@ -599,21 +599,26 @@ spam oluşmaması amacıyla `--cooldown-frames` kullanılır.
 
 Varsayılan sayım modu `--count-mode active_tracks` değeridir. Böylece crowd
 durumu video boyunca biriken benzersiz ID sayısına göre değil, o anda ROI içinde
-görünen ve en az `--min-track-frames` kadar stabilize olmuş aktif tracklere göre
+görünen ve en az `--min-track-age` kadar stabilize olmuş aktif tracklere göre
 hesaplanır. Bu, yoğun kalabalıklarda ByteTrack ID kopmalarından kaynaklanan
-şişirilmiş sayımları azaltır.
+şişirilmiş sayımları azaltır. Varsayılan `--min-track-age` değeri `15` frame'dir.
 
 Video okunabilirliğini artırmak için kişi ID etiketleri varsayılan olarak
 gizlidir. Sadece kutular ve isteğe bağlı track çizgileri gösterilir. ID
 etiketlerini görmek için `--show-person-ids` kullanılabilir. ByteTrack kayıp
 track tamponu `--max-lost-frames` ile ayarlanabilir.
 
+Yoğun kalabalık videoları için varsayılan eşikler daha yüksek tutulmuştur:
+`--warning-threshold 25`, `--crowd-threshold 40`. Bu değerler sahneye, kamera
+açısına ve ROI boyutuna göre ayarlanmalıdır.
+
 Panelde şu dashboard metrikleri gösterilir:
 
 ```text
-Current Persons in ROI
-Peak Persons in ROI
-Average Persons in ROI
+Current Persons
+Peak Persons
+Average Persons
+Density Level: LOW / MEDIUM / HIGH
 ```
 
 Alert banner yalnızca durum yükseldiğinde gösterilir:
@@ -644,30 +649,32 @@ frame,time_sec,active_persons_in_roi,unique_persons_in_roi,status,event,snapshot
 ```
 
 Özet JSON dosyasında ayrıca `peak_persons`, `average_persons`,
-`crowd_duration_sec` ve `warning_duration_sec` metrikleri bulunur.
+`peak_persons_in_roi`, `average_persons_in_roi`, `density_level_peak`,
+`stable_track_min_age`, `crowd_duration_sec` ve `warning_duration_sec`
+metrikleri bulunur.
 
 Varsayılan ROI:
 
 ```powershell
-python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960
+python src/crowd_detection.py --source data/sample_videos/test8.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960
 ```
 
 Özel ROI:
 
 ```powershell
-python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --roi 500,300,1600,900 --roi-name "Crosswalk Zone"
+python src/crowd_detection.py --source data/sample_videos/test8.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --roi 500,300,1600,900 --roi-name "Crosswalk Zone"
 ```
 
 Daha hassas eşik:
 
 ```powershell
-python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --warning-threshold 3 --crowd-threshold 6
+python src/crowd_detection.py --source data/sample_videos/test8.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --warning-threshold 15 --crowd-threshold 25
 ```
 
 ID etiketleriyle debug görünümü:
 
 ```powershell
-python src/crowd_detection.py --source data/sample_videos/test7.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --show-person-ids
+python src/crowd_detection.py --source data/sample_videos/test8.mp4 --model models/yolo11s_2class_960_best.pt --conf 0.35 --imgsz 960 --show-person-ids
 ```
 
 ## Wrong Way Detection

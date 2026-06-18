@@ -329,6 +329,15 @@ def status_label(status: str) -> str:
     }[status]
 
 
+def density_level(status: str) -> str:
+    """Return dashboard density level for a crowd status."""
+    return {
+        STATUS_NORMAL: "LOW",
+        STATUS_WARNING: "MEDIUM",
+        STATUS_CROWD_ALERT: "HIGH",
+    }[status]
+
+
 def draw_roi(frame: object, roi: ROI, status: str) -> None:
     """Draw ROI rectangle and label."""
     color = color_for_status(status)
@@ -408,11 +417,10 @@ def draw_panel(
         "Crowd Detection",
         f"ROI: {roi.name}",
         f"Status: {status_label(snapshot.status)}",
-        f"Current Persons in ROI: {snapshot.active_persons_in_roi}",
-        f"Peak Persons in ROI: {monitor.max_persons_in_roi}",
-        f"Average Persons in ROI: {monitor.average_persons():.1f}",
-        f"Warning Threshold: {warning_threshold}",
-        f"Crowd Threshold: {crowd_threshold}",
+        f"Current Persons: {snapshot.active_persons_in_roi}",
+        f"Peak Persons: {monitor.max_persons_in_roi}",
+        f"Average Persons: {monitor.average_persons():.1f}",
+        f"Density Level: {density_level(snapshot.status)}",
         f"FPS: {fps:.1f}",
     ]
     frame_height, frame_width = frame.shape[:2]
@@ -531,6 +539,7 @@ def write_summary(
     monitor: CrowdMonitor,
     output_video_path: Path,
     csv_path: Path,
+    stable_track_min_age: int,
 ) -> None:
     """Write final crowd summary JSON."""
     summary = {
@@ -542,7 +551,12 @@ def write_summary(
         "crowd_threshold": crowd_threshold,
         "max_persons_in_roi": monitor.max_persons_in_roi,
         "peak_persons": monitor.max_persons_in_roi,
+        "peak_persons_in_roi": monitor.max_persons_in_roi,
         "average_persons": monitor.average_persons(),
+        "average_persons_in_roi": monitor.average_persons(),
+        "density_level_peak": density_level(
+            monitor.status_for_count(monitor.max_persons_in_roi)
+        ),
         "crowd_duration_sec": monitor.status_duration_sec(
             STATUS_CROWD_ALERT,
             fps,
@@ -551,6 +565,7 @@ def write_summary(
             STATUS_WARNING,
             fps,
         ),
+        "stable_track_min_age": stable_track_min_age,
         "total_warning_events": monitor.warning_events,
         "total_crowd_alert_events": monitor.crowd_alert_events,
         "unique_persons_in_roi": len(monitor.unique_person_ids_in_roi),
@@ -762,6 +777,7 @@ def process_video(
         monitor,
         output_video_path,
         csv_path,
+        min_track_frames,
     )
     return (
         alert_dir,
@@ -815,14 +831,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warning-threshold",
         type=int,
-        default=5,
-        help="Active persons needed for warning status (default: 5).",
+        default=25,
+        help="Active persons needed for warning status (default: 25).",
     )
     parser.add_argument(
         "--crowd-threshold",
         type=int,
-        default=10,
-        help="Active persons needed for crowd alert status (default: 10).",
+        default=40,
+        help="Active persons needed for crowd alert status (default: 40).",
     )
     parser.add_argument(
         "--alert-display-frames",
@@ -839,10 +855,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Save warning snapshots; crowd alert snapshots are always saved.",
     )
     parser.add_argument(
+        "--min-track-age",
         "--min-track-frames",
+        dest="min_track_frames",
+        metavar="MIN_TRACK_AGE",
         type=int,
-        default=10,
-        help="Frames required before counting a track in ROI (default: 10).",
+        default=15,
+        help="Frames required before counting a track in ROI (default: 15).",
     )
     parser.add_argument(
         "--cooldown-frames",
@@ -898,7 +917,7 @@ def main() -> int:
         LOGGER.error("--alert-display-frames must be at least 1.")
         return 2
     if args.min_track_frames < 1:
-        LOGGER.error("--min-track-frames must be at least 1.")
+        LOGGER.error("--min-track-age must be at least 1.")
         return 2
     if args.cooldown_frames < 0:
         LOGGER.error("--cooldown-frames cannot be negative.")
