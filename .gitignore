@@ -13,6 +13,7 @@ models/*
 
 # Runtime inference outputs
 outputs/alerts/
+outputs/dashboard/
 outputs/heatmaps/
 outputs/reports/
 outputs/videos/

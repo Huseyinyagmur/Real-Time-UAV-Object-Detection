@@ -1,30 +1,58 @@
-# Gerçek Zamanlı İHA Nesne Tespit Sistemi
+# UAV Object Detection & Analytics System
 
-Bu proje, drone/İHA görüntülerinden **person** ve **vehicle** tespiti yapan
-YOLO tabanlı bir bilgisayarlı görü sistemidir. VisDrone2019 veri seti üzerinde
-farklı YOLO modelleri ve sınıf yapılandırmaları denenmiş, güncel final model
-olarak **YOLO11s 2-Class** seçilmiştir.
+**Real-Time UAV Object Detection and Traffic/Security Analytics System**
 
-## Proje Özellikleri
+## Project Overview
 
-- VisDrone annotation verilerini YOLO formatına dönüştürme
-- Final model ile `Person` ve `Vehicle` tespiti
-- Önceki deney olarak 4-class `Person`, `Car`, `Truck`, `Bus` sürümünün korunması
-- Video üzerinde frame bazlı YOLO11s nesne tespiti
-- ByteTrack ile çoklu nesne takibi ve kalıcı `track_id` atama
-- Bounding box, sınıf adı ve güven skorunun görüntüye çizilmesi
-- Nesne merkez koordinatının çıkarılması ve merkez noktasının işaretlenmesi
-- Aktif nesne sayımı ve benzersiz track ID sayımı
-- Hareket yönü ve yörünge çizimi
-- Piksel tabanlı göreli hız tahmini
-- Line Crossing Counter ile yönlü nesne geçiş sayımı
-- ROI Zone Counting ile dikdörtgen bölge içi nesne sayımı
-- Traffic Heatmap ile yoğunluk haritası üretimi
-- Anlık inference FPS değerinin görüntülenmesi
-- İşlenmiş videonun MP4 formatında kaydedilmesi
-- Tespit ve takip sonuçlarının CSV olarak kaydedilmesi
-- Yerel video dosyası ve doğrudan HTTP(S) MP4 URL desteği
-- Model karşılaştırma grafikleri ve doğrulama görselleri
+Bu proje, drone/İHA videolarında **person** ve **vehicle** tespiti yapan,
+tespit sonuçlarını ByteTrack ile takip eden ve trafik/güvenlik analitiği
+üreten modüler bir bilgisayarlı görü sistemidir. Sistem; video inference,
+nesne takibi, çizgi geçiş sayımı, ROI tabanlı analizler, hız ihlali, ters yön
+tespiti, kalabalık izleme, heatmap üretimi ve final dashboard raporlamasını tek
+bir portföy projesi içinde birleştirir.
+
+Proje VisDrone2019 veri seti üzerinde eğitilen YOLO modelleriyle geliştirilmiş,
+güncel final model olarak **YOLO11s 2-Class** seçilmiştir. Önceki 4-class
+`Person`, `Car`, `Truck`, `Bus` deneyleri karşılaştırma amacıyla korunmaktadır.
+
+## Final Model
+
+```text
+Model: YOLO11s 2-Class
+Classes: person, vehicle
+Weights: models/yolo11s_2class_960_best.pt
+mAP50: 0.710
+mAP50-95: 0.407
+```
+
+## Modüler Özellikler
+
+**Core**
+
+- Detection
+- Tracking
+- Video Inference
+- CSV Logging
+
+**Traffic Analytics**
+
+- Line Crossing Counter
+- Traffic Heatmap
+- Traffic Flow Analysis
+- Speed Violation Alert
+- Wrong Way Detection
+
+**Security Analytics**
+
+- ROI Zone Counting
+- ROI Intrusion Alert
+- Pedestrian Zone Intrusion
+- Crowd Detection
+
+**Reporting**
+
+- Project Dashboard
+- JSON/CSV/PNG reports
 
 ## Kullanılan Teknolojiler
 
@@ -123,23 +151,6 @@ Bu klasörlerde eğitim metrik grafikleri (`results.png`), confusion matrix,
 normalize confusion matrix, sınıf dağılımı (`labels.jpg`) ve doğrulama tahmin
 örnekleri bulunur. Görseller model davranışını ve karşılaştırma sonuçlarını
 GitHub üzerinden incelemek amacıyla repoya dahil edilmiştir.
-
-## Final Model
-
-Güncel final model:
-
-```text
-models/yolo11s_2class_960_best.pt
-```
-
-Model yapılandırması:
-
-```text
-YOLO11s 2-Class
-50 Epoch
-Input Size: 960
-Classes: person, vehicle
-```
 
 ## En İyi Model: YOLO11s 2-Class
 
@@ -932,6 +943,60 @@ yumuşatma miktarını, `--point-radius` her merkez noktasının etki alanını,
 `--max-weight` ise occupancy modunda tek noktanın bırakabileceği maksimum
 ağırlığı kontrol eder.
 
+## Dashboard Report
+
+Final dashboard modülü, proje içinde üretilen trafik ve güvenlik analitiği
+çıktılarını tek bir görsel raporda toplar. Traffic Flow Analysis JSON/CSV
+raporları, speed violation logları, wrong-way olayları, ROI intrusion kayıtları,
+pedestrian intrusion kayıtları, crowd detection summary dosyaları ve varsa
+heatmap görselleri referans olarak kullanılır.
+
+Dashboard pipeline:
+
+```text
+src/generate_project_dashboard.py
+```
+
+Varsayılan kullanım:
+
+```powershell
+python src/generate_project_dashboard.py
+```
+
+Özel klasörlerle kullanım:
+
+```powershell
+python src/generate_project_dashboard.py --reports-dir outputs/reports --logs-dir outputs/logs --heatmaps-dir outputs/heatmaps --output-dir outputs/dashboard
+```
+
+Üretilen çıktılar:
+
+```text
+outputs/dashboard/project_dashboard.png
+outputs/dashboard/project_summary.json
+```
+
+Dashboard PNG içinde şu metrikler ve grafikler yer alır:
+
+- Total Vehicles
+- Total Persons
+- Peak Active Vehicles
+- Average Vehicle Speed px/s
+- Speed Violations
+- Wrong Way Events
+- ROI Intrusions
+- Pedestrian Intrusions
+- Peak Crowd Density
+- Crowd Alert Events
+- Vehicle direction distribution
+- Traffic flow timeline
+- Event counts bar chart
+- Crowd/person density summary
+
+Eksik log veya rapor dosyaları hata oluşturmaz; ilgili metrikler `N/A` olarak
+gösterilir. Böylece dashboard, yalnızca mevcut analiz çıktılarıyla da
+üretilebilir.
+
 ## Speed Estimation
 
 Her `track_id` için merkez koordinatı geçmişi kullanılarak piksel tabanlı hız
@@ -974,6 +1039,7 @@ UAV_Object_Detection/
 │   └── yolo11s_2class_960_best.pt
 ├── outputs/
 │   ├── alerts/
+│   ├── dashboard/
 │   ├── heatmaps/
 │   ├── logs/
 │   ├── reports/
@@ -986,6 +1052,7 @@ UAV_Object_Detection/
 │   ├── crowd_detection.py
 │   ├── convert_visdrone_2class.py
 │   ├── convert_visdrone_4class.py
+│   ├── generate_project_dashboard.py
 │   ├── generate_heatmap.py
 │   ├── inference_video.py
 │   ├── pedestrian_zone_intrusion.py
@@ -1001,10 +1068,25 @@ UAV_Object_Detection/
 └── README.md
 ```
 
-`outputs/heatmaps/`, `outputs/logs/` ve `outputs/videos/` klasörleri çalışma
-sırasında otomatik oluşturulur. Runtime çıktı dosyaları GitHub deposuna dahil
-edilmez; eğitim sonuç görselleri ise benchmark ve model karşılaştırması
-amacıyla repoda tutulur.
+`outputs/alerts/`, `outputs/dashboard/`, `outputs/heatmaps/`, `outputs/logs/`,
+`outputs/reports/` ve `outputs/videos/` klasörleri çalışma sırasında otomatik
+oluşturulur. Runtime çıktı dosyaları GitHub deposuna dahil edilmez; eğitim
+sonuç görselleri ise benchmark ve model karşılaştırması amacıyla repoda tutulur.
+
+## Important Notes
+
+- Hız değerleri gerçek km/h değildir; piksel tabanlı `px/s` değerleridir.
+- Sonuçlar kamera açısı, video çözünürlüğü, perspektif, irtifa ve sahne ölçeğine bağlıdır.
+- Bu proje gerçek zamanlı İHA analitiği için geliştirilmiş modüler bir prototiptir.
+- Güvenlik ve trafik alarm modülleri karar destek amaçlıdır; kritik kullanımda saha kalibrasyonu gerekir.
+
+## Final Project Status
+
+Bu proje; detection, tracking, traffic analytics, security alerts, crowd
+monitoring ve report generation özelliklerini içeren modüler bir UAV analytics
+sistemi haline getirilmiştir. Her modül bağımsız script olarak çalışır, ortak
+YOLO11s 2-Class final modelini kullanır ve sonuçlarını CSV, JSON, PNG veya MP4
+formatında dışa aktarır.
 
 ## Gelecek Çalışmalar
 
@@ -1013,6 +1095,8 @@ amacıyla repoda tutulur.
 - Kamera hareketi telafisi
 - Piksel hızını gerçek dünya hızına çevirmek için kamera kalibrasyonu
 - Nesne yörüngelerinin kaydedilmesi
+- ROI (Region of Interest) sayımı
+- Trafik yoğunluğu heatmap üretimi
 - Çoklu ROI (Region of Interest) bölgeleri
 - ROI bazlı heatmap analizi
 - Çoklu line crossing bölgeleri
@@ -1028,9 +1112,11 @@ amacıyla repoda tutulur.
 - mAP50-95 = 0.407
 
 Bu model proje içerisinde nesne tespiti, ByteTrack tabanlı takip, aktif nesne
-sayımı, yön analizi ve piksel tabanlı hız tahmini için kullanılmaktadır.
+sayımı, yön analizi, piksel tabanlı hız tahmini, trafik analitiği ve güvenlik
+alarm modülleri için kullanılmaktadır.
 
 Sistem artık nesne tespiti, çoklu nesne takibi, aktif nesne sayımı, yön
-analizi, piksel tabanlı hız tahmini ve line crossing analitiğini tek bir video
-pipeline'ında sunmaktadır. Final demo yoğun trafik videoları üzerinde başarıyla
-test edilmiştir.
+analizi, piksel tabanlı hız tahmini, line crossing, ROI analizi, intrusion
+alert, speed violation, wrong-way detection, crowd monitoring, heatmap ve final
+dashboard raporlaması sunmaktadır. Final demo yoğun trafik ve kalabalık
+videoları üzerinde başarıyla test edilmiştir.
