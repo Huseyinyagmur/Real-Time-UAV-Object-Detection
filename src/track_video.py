@@ -5,13 +5,11 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
-import math
 import time
-from collections import defaultdict, deque
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
 from ultralytics import YOLO
 
 from inference_video import (
@@ -23,6 +21,8 @@ from inference_video import (
     prepare_source,
     validate_file,
 )
+from core.drawing import draw_counting_line, draw_statistics, draw_track
+from core.tracking import TrackedObject, TrackHistory, extract_tracked_objects
 
 
 LOGGER = logging.getLogger("video_tracking")
@@ -33,11 +33,6 @@ DEFAULT_CSV_PATH = PROJECT_ROOT / "outputs" / "logs" / "tracking.csv"
 CLASS_NAMES = {
     0: "Person",
     1: "Vehicle",
-}
-
-CLASS_COLORS = {
-    0: (0, 255, 0),
-    1: (255, 144, 30),
 }
 
 CSV_COLUMNS = (
@@ -68,24 +63,6 @@ CSV_COLUMNS = (
     "line_person_left",
     "line_person_right",
 )
-
-
-@dataclass(frozen=True)
-class TrackedObject:
-    """One ByteTrack result in pixel coordinates."""
-
-    track_id: int
-    class_id: int
-    class_name: str
-    confidence: float
-    x1: int
-    y1: int
-    x2: int
-    y2: int
-    center_x: int
-    center_y: int
-    direction: str
-    speed_px_per_sec: float
 
 
 @dataclass(frozen=True)
@@ -350,101 +327,6 @@ class LineCrossingCounter:
         )
 
 
-class TrackHistory:
-    """Store center observations and calculate direction and pixel speed."""
-
-    SPEED_WINDOW = 10
-    SMOOTHING_WINDOW = 2
-
-    def __init__(
-        self,
-        history_length: int = 30,
-        direction_threshold: int = 8,
-        speed_threshold: float = 2.0,
-        retention_frames: int = 300,
-    ) -> None:
-        self.history_length = history_length
-        self.direction_threshold = direction_threshold
-        self.speed_threshold = speed_threshold
-        self.retention_frames = retention_frames
-        self.raw_points: dict[int, deque[tuple[int, int, int]]] = defaultdict(
-            lambda: deque(maxlen=self.history_length)
-        )
-        self.points: dict[int, deque[tuple[int, int, int]]] = defaultdict(
-            lambda: deque(maxlen=self.history_length)
-        )
-        self.last_seen: dict[int, int] = {}
-
-    def update(
-        self,
-        track_id: int,
-        center: tuple[int, int],
-        frame_number: int,
-        source_fps: float,
-    ) -> tuple[str, float]:
-        """Append a center observation and return direction and smoothed speed."""
-        raw_history = self.raw_points[track_id]
-        raw_history.append((frame_number, center[0], center[1]))
-        smoothing_points = tuple(raw_history)[-self.SMOOTHING_WINDOW :]
-        smoothed_x = round(
-            sum(point[1] for point in smoothing_points)
-            / len(smoothing_points)
-        )
-        smoothed_y = round(
-            sum(point[2] for point in smoothing_points)
-            / len(smoothing_points)
-        )
-
-        history = self.points[track_id]
-        history.append((frame_number, smoothed_x, smoothed_y))
-        self.last_seen[track_id] = frame_number
-        return self.motion(track_id, source_fps)
-
-    def motion(self, track_id: int, source_fps: float) -> tuple[str, float]:
-        """Return direction and displacement speed over ten smoothed points."""
-        recent_points = tuple(self.points[track_id])[-self.SPEED_WINDOW :]
-        if len(recent_points) < self.SPEED_WINDOW or source_fps <= 0:
-            return "stable", 0.0
-
-        start_frame, start_x, start_y = recent_points[0]
-        end_frame, end_x, end_y = recent_points[-1]
-        frame_difference = end_frame - start_frame
-        if frame_difference <= 0:
-            return "stable", 0.0
-
-        delta_x = end_x - start_x
-        delta_y = end_y - start_y
-        displacement = math.hypot(delta_x, delta_y)
-        if displacement < self.speed_threshold:
-            return "stable", 0.0
-
-        time_difference = frame_difference / source_fps
-        speed_px_per_sec = displacement / time_difference
-        if abs(delta_x) >= abs(delta_y):
-            direction = "right" if delta_x > 0 else "left"
-        else:
-            direction = "down" if delta_y > 0 else "up"
-        return direction, speed_px_per_sec
-
-    def get_points(self, track_id: int) -> tuple[tuple[int, int], ...]:
-        """Return a track's center history for trajectory drawing."""
-        return tuple(
-            (x, y) for _, x, y in self.points.get(track_id, ())
-        )
-
-    def prune(self, frame_number: int) -> None:
-        """Remove histories that have not appeared for a while."""
-        expired_ids = [
-            track_id
-            for track_id, last_frame in self.last_seen.items()
-            if frame_number - last_frame > self.retention_frames
-        ]
-        for track_id in expired_ids:
-            self.raw_points.pop(track_id, None)
-            self.points.pop(track_id, None)
-            self.last_seen.pop(track_id, None)
-
-
 def create_output_paths(source_stem: str) -> tuple[Path, Path]:
     """Create tracking output directories and return their paths."""
     DEFAULT_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
@@ -452,257 +334,6 @@ def create_output_paths(source_stem: str) -> tuple[Path, Path]:
     return (
         DEFAULT_VIDEO_DIR / f"{source_stem}_tracked.mp4",
         DEFAULT_CSV_PATH,
-    )
-
-
-def extract_tracked_objects(
-    result: object,
-    history: TrackHistory,
-    frame_number: int,
-    source_fps: float,
-) -> list[TrackedObject]:
-    """Convert an Ultralytics tracking result to project objects."""
-    tracked_objects: list[TrackedObject] = []
-    boxes = getattr(result, "boxes", None)
-    if boxes is None or boxes.id is None:
-        return tracked_objects
-
-    for box in boxes:
-        if box.id is None:
-            continue
-
-        class_id = int(box.cls.item())
-        if class_id not in CLASS_NAMES:
-            continue
-
-        track_id = int(box.id.item())
-        confidence = float(box.conf.item())
-        x1_float, y1_float, x2_float, y2_float = box.xyxy[0].tolist()
-        center_x = round((x1_float + x2_float) / 2.0)
-        center_y = round((y1_float + y2_float) / 2.0)
-        direction, speed_px_per_sec = history.update(
-            track_id,
-            (center_x, center_y),
-            frame_number,
-            source_fps,
-        )
-
-        tracked_objects.append(
-            TrackedObject(
-                track_id=track_id,
-                class_id=class_id,
-                class_name=CLASS_NAMES[class_id],
-                confidence=confidence,
-                x1=round(x1_float),
-                y1=round(y1_float),
-                x2=round(x2_float),
-                y2=round(y2_float),
-                center_x=center_x,
-                center_y=center_y,
-                direction=direction,
-                speed_px_per_sec=speed_px_per_sec,
-            )
-        )
-
-    return tracked_objects
-
-
-def draw_track(
-    frame: object,
-    tracked_object: TrackedObject,
-    history: TrackHistory,
-    show_direction: bool,
-    show_speed: bool,
-) -> None:
-    """Draw a tracked object, its center, direction, and trajectory."""
-    color = CLASS_COLORS[tracked_object.class_id]
-    label_parts = [
-        f"ID {tracked_object.track_id}",
-        f"{tracked_object.class_name} {tracked_object.confidence:.2f}",
-    ]
-    if show_direction:
-        label_parts.append(tracked_object.direction)
-    if show_speed:
-        label_parts.append(f"{tracked_object.speed_px_per_sec:.1f} px/s")
-    label = " | ".join(label_parts)
-
-    cv2.rectangle(
-        frame,
-        (tracked_object.x1, tracked_object.y1),
-        (tracked_object.x2, tracked_object.y2),
-        color,
-        2,
-    )
-    cv2.circle(
-        frame,
-        (tracked_object.center_x, tracked_object.center_y),
-        4,
-        color,
-        -1,
-    )
-
-    points = history.get_points(tracked_object.track_id)[-20:]
-    for start, end in zip(points, points[1:]):
-        cv2.line(frame, start, end, color, 2, cv2.LINE_AA)
-
-    (text_width, text_height), baseline = cv2.getTextSize(
-        label,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        2,
-    )
-    label_y = max(tracked_object.y1, text_height + baseline + 4)
-    cv2.rectangle(
-        frame,
-        (tracked_object.x1, label_y - text_height - baseline - 4),
-        (tracked_object.x1 + text_width + 6, label_y),
-        color,
-        -1,
-    )
-    cv2.putText(
-        frame,
-        label,
-        (tracked_object.x1 + 3, label_y - baseline - 2),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-
-
-def draw_statistics(
-    frame: object,
-    counts: CountSnapshot,
-    line_counts: LineCrossingSnapshot,
-    fps: float,
-    show_unique: bool,
-    line_orientation: str,
-) -> None:
-    """Draw active counts prominently and cumulative unique total secondarily."""
-    lines = [
-        f"Active Total: {counts.active_total}",
-        f"Active Vehicle: {counts.active_vehicle}",
-        f"Active Person: {counts.active_person}",
-    ]
-    if line_orientation == "horizontal":
-        lines.extend(
-            [
-                f"Line Vehicle Up: {line_counts.vehicle_up}",
-                f"Line Vehicle Down: {line_counts.vehicle_down}",
-                f"Line Person Up: {line_counts.person_up}",
-                f"Line Person Down: {line_counts.person_down}",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                f"Line Vehicle Left: {line_counts.vehicle_left}",
-                f"Line Vehicle Right: {line_counts.vehicle_right}",
-                f"Line Person Left: {line_counts.person_left}",
-                f"Line Person Right: {line_counts.person_right}",
-            ]
-        )
-    lines.append(f"FPS: {fps:.1f}")
-    if show_unique:
-        lines.insert(-1, f"Unique Tracks: {counts.unique_total}")
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    frame_height, frame_width = frame.shape[:2]
-    scale_factor = max(frame_width / 1920.0, 1.0)
-    font_scale = 0.74 * scale_factor
-    thickness = max(2, round(2 * scale_factor))
-    line_height = round(34 * scale_factor)
-    padding = round(14 * scale_factor)
-    origin_x = round(20 * scale_factor)
-    origin_y = round(20 * scale_factor)
-    text_width = max(
-        cv2.getTextSize(line, font, font_scale, thickness)[0][0]
-        for line in lines
-    )
-    panel_width = text_width + (padding * 2)
-    panel_height = (len(lines) * line_height) + padding
-
-    overlay = frame.copy()
-    cv2.rectangle(
-        overlay,
-        (origin_x, origin_y),
-        (origin_x + panel_width, origin_y + panel_height),
-        (0, 0, 0),
-        -1,
-    )
-    cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
-
-    for index, line in enumerate(lines):
-        if line.startswith("FPS"):
-            color = (0, 255, 255)
-        elif line.startswith("Unique"):
-            color = (180, 180, 180)
-        else:
-            color = (255, 255, 255)
-        cv2.putText(
-            frame,
-            line,
-            (
-                origin_x + padding,
-                origin_y + padding + ((index + 1) * line_height) - 9,
-            ),
-            font,
-            font_scale,
-            color,
-            thickness,
-            cv2.LINE_AA,
-        )
-
-
-def draw_counting_line(
-    frame: object,
-    line_counter: LineCrossingCounter,
-    line_thickness: int,
-) -> None:
-    """Draw the configured virtual counting line on a frame."""
-    frame_height, frame_width = frame.shape[:2]
-    coordinate = line_counter.line_coordinate(frame_width, frame_height)
-    color = (0, 255, 255)
-    thickness = max(1, line_thickness)
-    scale_factor = max(frame_width / 1920.0, 1.0)
-    label_scale = 0.55 * scale_factor
-    label_thickness = max(1, round(1 * scale_factor))
-
-    if line_counter.orientation == "horizontal":
-        start_point = (0, coordinate)
-        end_point = (frame_width, coordinate)
-        text_point = (
-            round(18 * scale_factor),
-            max(round(24 * scale_factor), coordinate - round(8 * scale_factor)),
-        )
-    else:
-        start_point = (coordinate, 0)
-        end_point = (coordinate, frame_height)
-        text_width = cv2.getTextSize(
-            "Counting Line",
-            cv2.FONT_HERSHEY_SIMPLEX,
-            label_scale,
-            label_thickness,
-        )[0][0]
-        text_point = (
-            min(
-                frame_width - text_width - round(12 * scale_factor),
-                coordinate + round(8 * scale_factor),
-            ),
-            round(26 * scale_factor),
-        )
-
-    cv2.line(frame, start_point, end_point, color, thickness, cv2.LINE_AA)
-    cv2.putText(
-        frame,
-        "Counting Line",
-        text_point,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        label_scale,
-        color,
-        label_thickness,
-        cv2.LINE_AA,
     )
 
 
@@ -782,7 +413,7 @@ def process_video(
             prepared_source.output_stem
         )
         capture = open_video(prepared_source.path)
-        writer: cv2.VideoWriter | None = None
+        writer = None
         history = TrackHistory(
             history_length=history_length,
             direction_threshold=direction_threshold,
@@ -843,6 +474,7 @@ def process_video(
                         history,
                         processed_frames,
                         source_fps,
+                        CLASS_NAMES,
                     )
                     tracked_observations += len(tracked_objects)
                     counts = counter.update(results[0], tracked_objects)
