@@ -10,15 +10,10 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from inference_video import (
-    DEFAULT_VIDEO_DIR,
-    InferenceError,
-    create_video_writer,
-    get_video_properties,
-    open_video,
-    prepare_source,
-    validate_file,
-)
+from core.errors import InferenceError
+from core.paths import DEFAULT_VIDEO_DIR, PROJECT_ROOT
+from core.source import prepare_source, validate_file
+from core.video_io import create_video_writer, get_video_properties, open_video
 from core.drawing import draw_counting_line, draw_statistics, draw_track
 from core.csv_logger import CSV_COLUMNS, write_csv_rows
 from core.tracking import TrackHistory, extract_tracked_objects
@@ -30,7 +25,6 @@ from analytics.line_crossing import LineCrossingCounter
 
 
 LOGGER = logging.getLogger("video_tracking")
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "yolo11s_2class_960_best.pt"
 DEFAULT_CSV_PATH = PROJECT_ROOT / "outputs" / "logs" / "tracking.csv"
 
