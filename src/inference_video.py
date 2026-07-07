@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
-import math
 import shutil
 import tempfile
 import time
@@ -18,7 +17,14 @@ from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 import cv2
-from ultralytics import YOLO
+
+from core.detector import YOLODetector
+from core.video_io import (
+    VideoIOError,
+    create_video_writer,
+    get_video_properties,
+    open_video,
+)
 
 
 LOGGER = logging.getLogger("video_inference")
@@ -180,48 +186,6 @@ def create_output_paths(source_stem: str) -> tuple[Path, Path]:
     return video_path, DEFAULT_CSV_PATH
 
 
-def open_video(source_path: Path) -> cv2.VideoCapture:
-    """Open a source video and verify that it is readable."""
-    capture = cv2.VideoCapture(str(source_path))
-    if not capture.isOpened():
-        capture.release()
-        raise InferenceError(f"Video could not be opened: {source_path}")
-    return capture
-
-
-def get_video_properties(
-    capture: cv2.VideoCapture,
-) -> tuple[int, int, float, int]:
-    """Read and validate video metadata."""
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    source_fps = float(capture.get(cv2.CAP_PROP_FPS))
-    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    if width <= 0 or height <= 0:
-        raise InferenceError("Video has invalid frame dimensions.")
-    if not math.isfinite(source_fps) or source_fps <= 0:
-        LOGGER.warning("Invalid source FPS; output video will use 30 FPS.")
-        source_fps = 30.0
-
-    return width, height, source_fps, frame_count
-
-
-def create_video_writer(
-    output_path: Path,
-    width: int,
-    height: int,
-    fps: float,
-) -> cv2.VideoWriter:
-    """Create an MP4 video writer and verify the selected codec."""
-    codec = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(output_path), codec, fps, (width, height))
-    if not writer.isOpened():
-        writer.release()
-        raise InferenceError(f"Output video could not be created: {output_path}")
-    return writer
-
-
 def extract_detections(result: object) -> list[Detection]:
     """Convert an Ultralytics result into project detection objects."""
     detections: list[Detection] = []
@@ -354,7 +318,11 @@ def process_video(
     with prepare_source(source) as prepared_source:
         LOGGER.info("Loading model: %s", model_path)
         try:
-            model = YOLO(str(model_path))
+            detector = YOLODetector(
+                model_path=model_path,
+                conf=confidence,
+                imgsz=image_size,
+            )
         except Exception as exc:
             raise InferenceError(
                 f"Model could not be loaded: {model_path}"
@@ -363,16 +331,24 @@ def process_video(
         output_video_path, csv_path = create_output_paths(
             prepared_source.output_stem
         )
-        capture = open_video(prepared_source.path)
+        try:
+            capture = open_video(prepared_source.path)
+        except VideoIOError as exc:
+            raise InferenceError(str(exc)) from exc
+
         writer: cv2.VideoWriter | None = None
         processed_frames = 0
         total_detections = 0
 
         try:
-            width, height, source_fps, frame_count = get_video_properties(capture)
-            writer = create_video_writer(
-                output_video_path, width, height, source_fps
-            )
+            try:
+                width, height, source_fps, frame_count = get_video_properties(capture)
+                writer = create_video_writer(
+                    output_video_path, width, height, source_fps
+                )
+            except VideoIOError as exc:
+                raise InferenceError(str(exc)) from exc
+
             LOGGER.info(
                 "Processing video: %dx%d, %.2f FPS, %d frames",
                 width,
@@ -391,12 +367,7 @@ def process_video(
                         break
 
                     frame_started_at = time.perf_counter()
-                    results = model.predict(
-                        source=frame,
-                        conf=confidence,
-                        imgsz=image_size,
-                        verbose=False,
-                    )
+                    results = detector.predict(frame)
                     detections = extract_detections(results[0])
 
                     processed_frames += 1
