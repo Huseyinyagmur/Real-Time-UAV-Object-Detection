@@ -8,8 +8,6 @@ import logging
 import time
 from pathlib import Path
 
-from ultralytics import YOLO
-
 from core.errors import InferenceError
 from core.paths import DEFAULT_VIDEO_DIR, PROJECT_ROOT
 from core.source import prepare_source, validate_file
@@ -17,6 +15,7 @@ from core.video_io import create_video_writer, get_video_properties, open_video
 from core.drawing import draw_counting_line, draw_statistics, draw_track
 from core.csv_logger import CSV_COLUMNS, write_csv_rows
 from core.tracking import TrackHistory, extract_tracked_objects
+from core.yolo_tracker import YOLOByteTracker
 from analytics.object_counting import (
     ClassConfidenceThresholds,
     ObjectCounter,
@@ -65,12 +64,12 @@ def process_video(
 
     with prepare_source(source) as prepared_source:
         LOGGER.info("Loading model: %s", model_path)
-        try:
-            model = YOLO(str(model_path))
-        except Exception as exc:
-            raise InferenceError(
-                f"Model could not be loaded: {model_path}"
-            ) from exc
+        tracker = YOLOByteTracker(
+            model_path=model_path,
+            confidence=confidence,
+            image_size=image_size,
+            class_ids=sorted(CLASS_NAMES),
+        )
 
         output_video_path, csv_path = create_output_paths(
             prepared_source.output_stem
@@ -122,15 +121,7 @@ def process_video(
                         break
 
                     frame_started_at = time.perf_counter()
-                    results = model.track(
-                        source=frame,
-                        persist=True,
-                        tracker="bytetrack.yaml",
-                        conf=confidence,
-                        imgsz=image_size,
-                        classes=sorted(CLASS_NAMES),
-                        verbose=False,
-                    )
+                    results = tracker.track(frame)
 
                     processed_frames += 1
                     tracked_objects = extract_tracked_objects(
