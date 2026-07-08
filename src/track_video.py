@@ -308,6 +308,23 @@ def main() -> int:
         return 1
 
     options = resolve_tracking_options(args, config)
+    tracking_config=TrackingConfig(
+        model_path=options["model_path"],
+        confidence=options["confidence"],
+        image_size=options["image_size"],
+        history_legth=options["history_length"],
+        direction_threshold=options["direction_threshold"],
+        speed_threshold=options["speed_threshold"],
+        person_confidence=options["person_confidence"],
+        vehicle_confidence=options["vehicle_confidence"],
+        line_position=options["line_position"],
+        min_track_frames=options["min_track_frames"],
+        show_unique=options["show_unique"],
+        show_direction=options["show_direction"],
+        show_speed=options["show_speed"],
+        line_orientation=options["line_orientation"],
+        line_thickness=options["line_thickness"]
+    )
 
     if not 0.0 <= options["confidence"] <= 1.0:
         LOGGER.error("--conf must be between 0 and 1.")
