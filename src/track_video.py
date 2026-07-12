@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-
+from core.tracking_config import TrackingConfig
 from core.config import load_yaml_config
 from core.errors import InferenceError
 from core.paths import PROJECT_ROOT
@@ -312,7 +312,7 @@ def main() -> int:
         model_path=options["model_path"],
         confidence=options["confidence"],
         image_size=options["image_size"],
-        history_legth=options["history_length"],
+        history_length=options["history_length"],
         direction_threshold=options["direction_threshold"],
         speed_threshold=options["speed_threshold"],
         person_confidence=options["person_confidence"],
@@ -384,23 +384,7 @@ def main() -> int:
     try:
         output_video, csv_path, frames, observations = process_video(
             source=args.source,
-            model_path=options["model_path"],
-            confidence=options["confidence"],
-            image_size=options["image_size"],
-            history_length=options["history_length"],
-            direction_threshold=options["direction_threshold"],
-            speed_threshold=options["speed_threshold"],
-            thresholds=ClassConfidenceThresholds(
-                person=options["person_confidence"],
-                vehicle=options["vehicle_confidence"],
-            ),
-            min_track_frames=options["min_track_frames"],
-            show_unique=options["show_unique"],
-            show_direction=options["show_direction"],
-            show_speed=options["show_speed"],
-            line_orientation=options["line_orientation"],
-            line_position=options["line_position"],
-            line_thickness=options["line_thickness"],
+            config=tracking_config
         )
     except InferenceError as exc:
         LOGGER.error("%s", exc)

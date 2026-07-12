@@ -39,31 +39,18 @@ def create_output_paths(source_stem: str) -> tuple[Path, Path]:
 
 
 def process_video(
-    source: str,
-    model_path: Path,
-    confidence: float,
-    image_size: int,
-    history_length: int,
-    direction_threshold: int,
-    speed_threshold: float,
-    thresholds: ClassConfidenceThresholds,
-    min_track_frames: int,
-    show_unique: bool,
-    show_direction: bool,
-    show_speed: bool,
-    line_orientation: str,
-    line_position: float,
-    line_thickness: int,
+    source,
+    config,
 ) -> tuple[Path, Path, int, int]:
     """Track objects in a video and return output paths and totals."""
-    model_path = validate_file(model_path, "Model")
+    model_path = validate_file(config.model_path, "Model")
 
     with prepare_source(source) as prepared_source:
         LOGGER.info("Loading model: %s", model_path)
         tracker = YOLOByteTracker(
             model_path=model_path,
-            confidence=confidence,
-            image_size=image_size,
+            confidence=config.confidence,
+            image_size=config.image_size,
             class_ids=sorted(CLASS_NAMES),
         )
 
@@ -73,20 +60,24 @@ def process_video(
         capture = open_video(prepared_source.path)
         writer = None
         history = TrackHistory(
-            history_length=history_length,
-            direction_threshold=direction_threshold,
-            speed_threshold=speed_threshold,
+            history_length=config.history_length,
+            direction_threshold=config.direction_threshold,
+            speed_threshold=config.speed_threshold,
+        )
+        thresholds=ClassConfidenceThresholds(
+            person=config.person_confidence,
+            vehicle=config.vehicle_confidence
         )
         counter = ObjectCounter(
             thresholds=thresholds,
-            min_track_frames=min_track_frames,
+            min_track_frames=config.min_track_frames,
             class_names=CLASS_NAMES,
         )
         line_counter = LineCrossingCounter(
-            orientation=line_orientation,
-            position=line_position,
+            orientation=config.line_orientation,
+            position=config.line_position,
             thresholds=thresholds,
-            min_track_frames=min_track_frames,
+            min_track_frames=config.min_track_frames,
         )
         processed_frames = 0
         tracked_observations = 0
@@ -140,13 +131,13 @@ def process_video(
                             frame,
                             tracked_object,
                             history,
-                            show_direction=show_direction,
-                            show_speed=show_speed,
+                            show_direction=config.show_direction,
+                            show_speed=config.show_speed,
                         )
                     draw_counting_line(
                         frame,
                         line_counter,
-                        line_thickness=line_thickness,
+                        line_thickness=config.line_thickness,
                     )
                     write_csv_rows(
                         csv_writer,
@@ -164,8 +155,8 @@ def process_video(
                         counts,
                         line_counts,
                         instantaneous_fps,
-                        show_unique=show_unique,
-                        line_orientation=line_orientation,
+                        show_unique=config.show_unique,
+                        line_orientation=config.line_orientation,
                     )
                     writer.write(frame)
 
