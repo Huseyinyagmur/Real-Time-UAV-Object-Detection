@@ -21,6 +21,13 @@ def count_objects(label_directory:Path):
                 elif(class_id==1):
                     vehicle_count+=1
     return person_count,vehicle_count
+def calculate_ratios(person_count:int,vehicle_count:int)->tuple[float,float]:
+    total_objects=person_count+vehicle_count
+    if(total_objects==0):
+        return 0.0,0.0
+    person_ratio=person_count/total_objects*100
+    vehicle_ratio=vehicle_count/total_objects*100
+    return person_ratio,vehicle_ratio
 def main():
     dataset_path = Path("dataset/yolo_2class")
     train_images_path=dataset_path /"images"/"train"
