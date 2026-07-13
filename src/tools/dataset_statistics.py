@@ -42,9 +42,16 @@ def main():
     test_person_count,test_vehicle_count=count_objects(test_labels_path)
     valid_person_count,valid_vehicle_count=count_objects(valid_labels_path)
     train_person_count,train_vehicle_count=count_objects(train_labels_path)
+    train_person_ratio,train_vehicle_ratio=calculate_ratios(train_person_count,train_vehicle_count)
+    valid_person_ratio,valid_vehicle_ratio=calculate_ratios(valid_person_count,valid_vehicle_count)
+    test_person_ratio,test_vehicle_ratio=calculate_ratios(test_person_count,test_vehicle_count)
     print(f"Train Images:{train_image_count},Valid Images:{valid_image_count},Test Images:{test_image_count}")
     print(f"Train Vehicle Count:{train_vehicle_count}, Train Person Count:{train_person_count}")
     print(f"Valid Vehicle Count:{valid_vehicle_count},Valid Person Count:{valid_person_count}")
     print(f"Test Vehicle Count:{test_vehicle_count},Test Person Count:{test_person_count}")
+    print(f"Train Person Ratio:{train_person_ratio},Train Vehicle Ratio:{train_vehicle_ratio}")
+    print(f"Valid Person Ratio:{valid_person_ratio},Valid Vehicle Ratio:{valid_vehicle_ratio}")
+    print(f"Test Person Ratio:{test_person_ratio},Test Vehicle Ratio:{test_vehicle_ratio}")
+
 if __name__=="__main__":
     main()
