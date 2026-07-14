@@ -18,8 +18,14 @@ def main():
                             class_ids=config.class_ids)
     for image_path in image_paths:
         results=inference.predict(image_path)
-        print(type(results))
-        print(len(results))
+        result=results[0]
+        # print(type(result))
+        # print(result)
+        # print(dir(result))
+        boxes=result.boxes
+        print(type(boxes))
+        print(boxes)
+        print(dir(boxes))
         break
 
 
