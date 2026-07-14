@@ -48,6 +48,24 @@ def yolo_to_xyxy(bbox:list[float],image_width:int,image_height:int)->list[float]
     y1=y_center-height/2
     y2=y_center+height/2
     return [x1,y1,x2,y2]
+
+def calculate_iou(bbox1:list[float],bbox2:list[float])->float:
+    x1_min,y1_min,x1_max,y1_max=bbox1
+    x2_min,y2_min,x2_max,y2_max=bbox2
+    intersection_left=max(x1_min,x2_min)
+    intersection_right=min(x1_max,x2_max)
+    intersection_top=max(y1_min,y2_min)
+    intersection_bottom=min(y1_max,y2_max)
+    intersection_width=max(0.0,intersection_right-intersection_left)
+    intersection_height=max(0.0,intersection_bottom-intersection_top)
+    intersection_area=intersection_width*intersection_height
+    bbox1_area=(x1_max-x1_min)*(y1_max-y1_min)
+    bbox2_area=(x2_max-x2_min)*(y2_max-y2_min)
+    union_area=bbox1_area+bbox2_area-intersection_area
+    if union_area==0:
+        return 0.0
+    return intersection_area/union_area
+
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -75,13 +93,22 @@ def main():
         # print(ground_truth[0])
         # print(len(ground_truth))
         image_height,image_width=result.orig_shape
+        best_iou=0.0
         for label in ground_truth:
             label["bbox"]=yolo_to_xyxy(
                 label["bbox"],
                 image_width,
                 image_height
             )
-        print(ground_truth[0])
+        # print(ground_truth[0])
+            iou=calculate_iou(
+                predictions[0]["bbox"],
+                label["bbox"]
+            )
+            if iou > best_iou:
+                best_iou=iou
+        print(best_iou)
+        
         break
 
 if __name__=="__main__":
