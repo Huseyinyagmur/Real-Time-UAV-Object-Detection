@@ -35,7 +35,19 @@ def load_ground_truth(label_path: Path):
             })
     return labels
 
-
+def yolo_to_xyxy(bbox:list[float],image_width:int,image_height:int)->list[float]:
+    x_center,y_center,width,height=bbox
+    #yolo koordinatlarını piksel koordinatlarına dönüştürüyor.
+    x_center*=image_width
+    y_center*=image_height
+    width*=image_width
+    height*=image_height
+    #merkez koordinatlarını  köşe koordinatlarına çevirir
+    x1=x_center-width/2
+    x2=x_center+width/2
+    y1=y_center-height/2
+    y2=y_center+height/2
+    return [x1,y1,x2,y2]
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -60,8 +72,16 @@ def main():
         # print(len(predictions))
         label_path=Path("../dataset/yolo_2class/labels/val")/ f"{image_path.stem}.txt"
         ground_truth = load_ground_truth(label_path)
+        # print(ground_truth[0])
+        # print(len(ground_truth))
+        image_height,image_width=result.orig_shape
+        for label in ground_truth:
+            label["bbox"]=yolo_to_xyxy(
+                label["bbox"],
+                image_width,
+                image_height
+            )
         print(ground_truth[0])
-        print(len(ground_truth))
         break
 
 if __name__=="__main__":
