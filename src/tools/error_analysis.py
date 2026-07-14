@@ -7,6 +7,21 @@ def load_images(image_directory:Path)->list[Path]:
         if file.suffix.lower() in [".jpg",".png",".jpeg"]:
             image_paths.append(file)
     return image_paths
+
+def extract_predictions(result):
+    predictions=[]
+    boxes=result.boxes
+    for class_id,confidence,bbox in zip(boxes.cls,boxes.conf,boxes.xyxy):
+        predictions.append(
+            {
+                "class_id":int(class_id.item()),
+                "confidence":confidence.item(),
+                "bbox":bbox.tolist()
+            }
+        )
+    return predictions
+
+
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -23,10 +38,13 @@ def main():
         # print(result)
         # print(dir(result))
         boxes=result.boxes
-        print(type(boxes))
-        print(boxes)
-        print(dir(boxes))
+        # print(type(boxes))
+        # print(boxes)
+        # print(dir(boxes))
         break
+    predictions=extract_predictions(result)
+    print(predictions[0])
+    print(len(predictions))
 
 
 if __name__=="__main__":
