@@ -6,9 +6,10 @@ from pathlib import Path
 @dataclass(frozen=True)#Bu config oluşturulduktan sonra değiştirilemez-->frozen=true
 class TrackingConfig:
     """Configuration values used by the tracking pipeline."""
-    model_path: Path = Path("models/yolo11s_2class_960_best.pt")
+    model_path: Path = Path("../models/yolo11s_2class_960_best.pt")
     confidence: float = 0.25
     image_size: int = 960
+    class_ids:tuple[int, ...]=(0,1)
     history_length: int = 30
     direction_threshold: int=8
     speed_threshold: float = 2.0
