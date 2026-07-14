@@ -78,6 +78,20 @@ def find_best_match(prediction:dict,ground_truth:list[dict])->tuple[float,dict|N
             best_iou=iou
             best_label=label
     return best_iou,best_label
+def classify_prediction(
+        prediction:dict,
+        ground_truth:list[dict],
+        iou_threshold:float=0.5
+):
+    best_iou,best_label=find_best_match(prediction,ground_truth)
+    if best_iou<iou_threshold:
+        return "False Positive"
+    if best_iou>=iou_threshold:
+        if best_label["class_id"]==prediction["class_id"]:
+            return "True Positive"
+        else:
+            return "Classification Error"
+
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -93,7 +107,7 @@ def main():
         # print(type(result))
         # print(result)
         # print(dir(result))
-        boxes=result.boxes
+        # boxes=result.boxes
         # print(type(boxes))
         # print(boxes)
         # print(dir(boxes))
@@ -113,8 +127,10 @@ def main():
             )
         # print(ground_truth[0])
         best_iou,best_label=find_best_match(predictions[0],ground_truth)
-        print(best_iou)
-        print(best_label)
+        # print(best_iou)
+        # print(best_label)
+        temp=classify_prediction(predictions[0],ground_truth,0.5)
+        print(temp)
         break
 
 if __name__=="__main__":
