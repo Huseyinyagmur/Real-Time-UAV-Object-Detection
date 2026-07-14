@@ -66,6 +66,18 @@ def calculate_iou(bbox1:list[float],bbox2:list[float])->float:
         return 0.0
     return intersection_area/union_area
 
+def find_best_match(prediction:dict,ground_truth:list[dict])->tuple[float,dict|None]:
+    best_iou=0.0
+    best_label=None
+    for label in ground_truth:
+        iou=calculate_iou(
+            prediction["bbox"],
+            label["bbox"]
+        )
+        if iou > best_iou:
+            best_iou=iou
+            best_label=label
+    return best_iou,best_label
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -93,7 +105,6 @@ def main():
         # print(ground_truth[0])
         # print(len(ground_truth))
         image_height,image_width=result.orig_shape
-        best_iou=0.0
         for label in ground_truth:
             label["bbox"]=yolo_to_xyxy(
                 label["bbox"],
@@ -101,14 +112,9 @@ def main():
                 image_height
             )
         # print(ground_truth[0])
-            iou=calculate_iou(
-                predictions[0]["bbox"],
-                label["bbox"]
-            )
-            if iou > best_iou:
-                best_iou=iou
+        best_iou,best_label=find_best_match(predictions[0],ground_truth)
         print(best_iou)
-        
+        print(best_label)
         break
 
 if __name__=="__main__":
