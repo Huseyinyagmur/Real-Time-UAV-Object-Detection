@@ -21,11 +21,25 @@ def extract_predictions(result):
         )
     return predictions
 
+def load_ground_truth(label_path: Path):
+    labels=[]
+
+    with label_path.open("r",encoding="utf-8") as file:
+        for line in file:
+            parts=line.split()
+            class_id=int(parts[0])
+            bbox=[float(value) for value in parts[1:]]
+            labels.append({
+                "class_id":class_id,
+                "bbox":bbox
+            })
+    return labels
+
 
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
-    print(len(image_paths))
+    # print(len(image_paths))
     config=TrackingConfig()
     inference=YOLOInference(model_path=config.model_path,
                             image_size=config.image_size,
@@ -41,11 +55,14 @@ def main():
         # print(type(boxes))
         # print(boxes)
         # print(dir(boxes))
+        predictions=extract_predictions(result)
+        # print(predictions[0])
+        # print(len(predictions))
+        label_path=Path("../dataset/yolo_2class/labels/val")/ f"{image_path.stem}.txt"
+        ground_truth = load_ground_truth(label_path)
+        print(ground_truth[0])
+        print(len(ground_truth))
         break
-    predictions=extract_predictions(result)
-    print(predictions[0])
-    print(len(predictions))
-
 
 if __name__=="__main__":
     main()
