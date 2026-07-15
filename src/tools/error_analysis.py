@@ -166,6 +166,13 @@ def load_csv_report(report_path:Path)->list[dict]:
             })
     return report
 
+def find_worst_images(report:list[dict],metric:str,top_k:int=10)->list[dict]:
+    sorted_report=sorted(
+        report,
+        key=lambda row:row[metric],
+        reverse=True
+    )
+    return sorted_report[:top_k]
 
 
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
