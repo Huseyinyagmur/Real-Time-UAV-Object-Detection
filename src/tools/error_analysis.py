@@ -174,7 +174,12 @@ def find_worst_images(report:list[dict],metric:str,top_k:int=10)->list[dict]:
     )
     return sorted_report[:top_k]
 
-
+def print_worst_images(worst_images:list[dict],metric:str)->None:
+    print(f"\n========== {metric.upper()} ==========")
+    for index,image in enumerate(worst_images,start=1):
+        print(f"{index}."  
+                f"{image['image_name']}"
+                f"{metric}={image[metric]}")
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
     total_true_positive=0
     total_false_positive=0
@@ -226,11 +231,30 @@ def main():
                             image_size=config.image_size,
                             confidence=config.confidence,
                             class_ids=config.class_ids)
-    tp,fp,ce,fn=analyze_dataset(
-        image_paths,
-        inference
+    # tp,fp,ce,fn=analyze_dataset(
+    #     image_paths,
+    #     inference
+    # )
+    # print(f"True Positive:{tp},False Positive:{fp},Classification Error:{ce},False Negative:{fn}")
+    project_root=Path(__file__).resolve().parents[2]
+    report=load_csv_report(
+        project_root/"output"/"report.csv"
     )
-    print(f"True Positive:{tp},False Positive:{fp},Classification Error:{ce},False Negative:{fn}")
+    worst_fp=find_worst_images(
+        report,"false_positive"
+    )
+    print_worst_images(
+        worst_fp,
+        "false_positive"
+    )
+    worst_fn=find_worst_images(
+        report,"false_negative"
+    )
+    print_worst_images(worst_fn,"false_negative")
+    worst_ce=find_worst_images(
+        report,"classification_error"
+    )
+    print_worst_images(worst_ce,"classification_error")
     # for image_path in image_paths:
     #     results=inference.predict(image_path)
     #     result=results[0]
