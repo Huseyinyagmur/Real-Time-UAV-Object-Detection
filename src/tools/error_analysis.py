@@ -1,6 +1,9 @@
+import cv2
+
 from core.yolo_inference import YOLOInference
 from pathlib import Path
 from core.tracking_config import TrackingConfig
+
 def load_images(image_directory:Path)->list[Path]:
     image_paths=[]
     for file in image_directory.iterdir():
@@ -117,6 +120,29 @@ def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int
         if label not in matched_labels:
             false_negative+=1
     return true_positive,false_positive,classification_error,false_negative
+def save_error_image(
+        image_path:Path,
+        result,
+        false_positive:int,
+        false_negative:int
+
+):
+    if false_positive>0 or false_negative>0:
+
+        annotated_image=result.plot()
+        PROJECT_ROOT=Path(__file__).resolve().parents[2]
+        output_directory=PROJECT_ROOT/"output"/"errors"
+        save_path=output_directory / image_path.name
+
+        output_directory.mkdir(
+            parents=True,    #klasör yoksa oluştur varsa hata verme
+            exist_ok=True
+        )
+        cv2.imwrite(
+            str(save_path),
+            annotated_image
+        )
+
 
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
     total_true_positive=0
@@ -137,11 +163,14 @@ def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,i
                 image_height
             )
         true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+        save_error_image(image_path,result,false_positive,false_negative)
         total_true_positive+=true_positive
         total_false_negative+=false_negative
         total_false_positive+=false_positive
         total_classification_error+=classification_error
     return (total_true_positive,total_false_positive,total_classification_error,total_false_negative)
+
+
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -189,6 +218,9 @@ def main():
         # true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
         # print(f"true_positive={true_positive},false_positive={false_positive},classification_error={classification_error},false_negative={false_negative}")
         # break
+        # annotated_image = result.plot()
+
+        # print(type(annotated_image))
 
 if __name__=="__main__":
     main()
