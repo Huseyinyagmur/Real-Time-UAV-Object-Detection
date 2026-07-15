@@ -1,5 +1,5 @@
 import cv2
-
+import csv
 from core.yolo_inference import YOLOInference
 from pathlib import Path
 from core.tracking_config import TrackingConfig
@@ -143,31 +143,54 @@ def save_error_image(
             annotated_image
         )
 
-
+def write_csv_row(csv_writer,image_path:Path,true_positive:int,false_positive:int,classification_error:int,false_negative:int):
+    csv_writer.writerow([
+        image_path.name,
+        true_positive,
+        false_positive,
+        classification_error,
+        false_negative
+        ]
+    )
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
     total_true_positive=0
     total_false_positive=0
     total_false_negative=0
     total_classification_error=0
-    for image_path in image_paths:
-        results=inference.predict(image_path)
-        result=results[0]
-        predictions=extract_predictions(result)
-        label_path=Path("../dataset/yolo_2class/labels/val")/f"{image_path.stem}.txt"
-        ground_truth=load_ground_truth(label_path)
-        image_height,image_width=result.orig_shape
-        for label in ground_truth:
-            label["bbox"]=yolo_to_xyxy(
-                label["bbox"],
-                image_width,
-                image_height
-            )
-        true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
-        save_error_image(image_path,result,false_positive,false_negative)
-        total_true_positive+=true_positive
-        total_false_negative+=false_negative
-        total_false_positive+=false_positive
-        total_classification_error+=classification_error
+    project_root=Path(__file__).resolve().parents[2]
+    output_directory=project_root/"output"
+    output_directory.mkdir(parents=True,exist_ok=True)
+    csv_path=output_directory/"report.csv"
+    with csv_path.open("w",newline="",encoding="utf-8") as file:
+        csv_writer=csv.writer(file)
+        csv_writer.writerow([
+            "image_name",
+            "true_positive",
+            "false_positive",
+            "classification_error",
+            "false_negative"]
+        )
+
+        for image_path in image_paths:
+            results=inference.predict(image_path)
+            result=results[0]
+            predictions=extract_predictions(result)
+            label_path=Path("../dataset/yolo_2class/labels/val")/f"{image_path.stem}.txt"
+            ground_truth=load_ground_truth(label_path)
+            image_height,image_width=result.orig_shape
+            for label in ground_truth:
+                label["bbox"]=yolo_to_xyxy(
+                    label["bbox"],
+                    image_width,
+                    image_height
+                )
+            true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+            write_csv_row(csv_writer,image_path,true_positive,false_positive,classification_error,false_negative,)
+            save_error_image(image_path,result,false_positive,false_negative)
+            total_true_positive+=true_positive
+            total_false_negative+=false_negative
+            total_false_positive+=false_positive
+            total_classification_error+=classification_error
     return (total_true_positive,total_false_positive,total_classification_error,total_false_negative)
 
 
