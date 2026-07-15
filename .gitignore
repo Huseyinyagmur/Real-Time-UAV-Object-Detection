@@ -20,7 +20,7 @@ outputs/heatmaps/
 outputs/reports/
 outputs/videos/
 outputs/logs/
-output/errors
+output/
 *.pt
 data/sample_videos/
 .qa_speed_review 
