@@ -118,6 +118,30 @@ def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int
             false_negative+=1
     return true_positive,false_positive,classification_error,false_negative
 
+def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
+    total_true_positive=0
+    total_false_positive=0
+    total_false_negative=0
+    total_classification_error=0
+    for image_path in image_paths:
+        results=inference.predict(image_path)
+        result=results[0]
+        predictions=extract_predictions(result)
+        label_path=Path("../dataset/yolo_2class/labels/val")/f"{image_path.stem}.txt"
+        ground_truth=load_ground_truth(label_path)
+        image_height,image_width=result.orig_shape
+        for label in ground_truth:
+            label["bbox"]=yolo_to_xyxy(
+                label["bbox"],
+                image_width,
+                image_height
+            )
+        true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+        total_true_positive+=true_positive
+        total_false_negative+=false_negative
+        total_false_positive+=false_positive
+        total_classification_error+=classification_error
+    return (total_true_positive,total_false_positive,total_classification_error,total_false_negative)
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -127,9 +151,14 @@ def main():
                             image_size=config.image_size,
                             confidence=config.confidence,
                             class_ids=config.class_ids)
-    for image_path in image_paths:
-        results=inference.predict(image_path)
-        result=results[0]
+    tp,fp,ce,fn=analyze_dataset(
+        image_paths,
+        inference
+    )
+    print(f"True Positive:{tp},False Positive:{fp},Classification Error:{ce},False Negative:{fn}")
+    # for image_path in image_paths:
+    #     results=inference.predict(image_path)
+    #     result=results[0]
         # print(type(result))
         # print(result)
         # print(dir(result))
@@ -137,29 +166,29 @@ def main():
         # print(type(boxes))
         # print(boxes)
         # print(dir(boxes))
-        predictions=extract_predictions(result)
+        # predictions=extract_predictions(result)
         # print(predictions[0])
         # print(len(predictions))
-        label_path=Path("../dataset/yolo_2class/labels/val")/ f"{image_path.stem}.txt"
-        ground_truth = load_ground_truth(label_path)
+        # label_path=Path("../dataset/yolo_2class/labels/val")/ f"{image_path.stem}.txt"
+        # ground_truth = load_ground_truth(label_path)
         # print(ground_truth[0])
         # print(len(ground_truth))
-        image_height,image_width=result.orig_shape
-        for label in ground_truth:
-            label["bbox"]=yolo_to_xyxy(
-                label["bbox"],
-                image_width,
-                image_height
-            )
+        # image_height,image_width=result.orig_shape
+        # for label in ground_truth:
+        #     label["bbox"]=yolo_to_xyxy(
+        #         label["bbox"],
+        #         image_width,
+        #         image_height
+        #     )
         # print(ground_truth[0])
         # best_iou,best_label=find_best_match(predictions[0],ground_truth)
         # print(best_iou)
         # print(best_label)
         # temp=classify_prediction(predictions[0],ground_truth,0.5)
         # print(temp)
-        true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
-        print(f"true_positive={true_positive},false_positive={false_positive},classification_error={classification_error},false_negative={false_negative}")
-        break
+        # true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+        # print(f"true_positive={true_positive},false_positive={false_positive},classification_error={classification_error},false_negative={false_negative}")
+        # break
 
 if __name__=="__main__":
     main()
