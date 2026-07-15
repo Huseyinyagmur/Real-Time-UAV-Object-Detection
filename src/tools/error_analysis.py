@@ -180,6 +180,27 @@ def print_worst_images(worst_images:list[dict],metric:str)->None:
         print(f"{index}."  
                 f"{image['image_name']}"
                 f"{metric}={image[metric]}")
+
+def calculate_metrics(true_positive:int,false_positive:int,false_negative:int)->dict:
+
+    if true_positive+false_positive==0:
+        precision=0.0
+    else:
+        precision=true_positive/(true_positive+false_positive)
+    if true_positive+false_negative==0:
+        recall=0.0
+    else:
+        recall=true_positive/(true_positive+false_negative)
+    if precision+recall==0:
+        f1_score=0.0
+    else:
+        f1_score=2*precision*recall/(precision+recall)
+    return {
+        "precision":precision,
+        "recall":recall,    
+        "f1_score":f1_score
+    }
+   
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
     total_true_positive=0
     total_false_positive=0
@@ -231,30 +252,36 @@ def main():
                             image_size=config.image_size,
                             confidence=config.confidence,
                             class_ids=config.class_ids)
-    # tp,fp,ce,fn=analyze_dataset(
-    #     image_paths,
-    #     inference
-    # )
+    tp,fp,ce,fn=analyze_dataset(
+         image_paths,
+         inference
+     )
+    metrics = calculate_metrics(tp, fp, fn)
+
+    print("\n========== MODEL METRICS ==========")
+    print(f"Precision : {metrics['precision']:.2%}")
+    print(f"Recall    : {metrics['recall']:.2%}")
+    print(f"F1 Score  : {metrics['f1_score']:.2%}")
     # print(f"True Positive:{tp},False Positive:{fp},Classification Error:{ce},False Negative:{fn}")
-    project_root=Path(__file__).resolve().parents[2]
-    report=load_csv_report(
-        project_root/"output"/"report.csv"
-    )
-    worst_fp=find_worst_images(
-        report,"false_positive"
-    )
-    print_worst_images(
-        worst_fp,
-        "false_positive"
-    )
-    worst_fn=find_worst_images(
-        report,"false_negative"
-    )
-    print_worst_images(worst_fn,"false_negative")
-    worst_ce=find_worst_images(
-        report,"classification_error"
-    )
-    print_worst_images(worst_ce,"classification_error")
+    # project_root=Path(__file__).resolve().parents[2]
+    # report=load_csv_report(
+    #     project_root/"output"/"report.csv"
+    # )
+    # worst_fp=find_worst_images(
+    #     report,"false_positive"
+    # )
+    # print_worst_images(
+    #     worst_fp,
+    #     "false_positive"
+    # )
+    # worst_fn=find_worst_images(
+    #     report,"false_negative"
+    # )
+    # print_worst_images(worst_fn,"false_negative")
+    # worst_ce=find_worst_images(
+    #     report,"classification_error"
+    # )
+    # print_worst_images(worst_ce,"classification_error")
     # for image_path in image_paths:
     #     results=inference.predict(image_path)
     #     result=results[0]
