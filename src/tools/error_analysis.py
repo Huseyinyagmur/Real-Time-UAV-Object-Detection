@@ -66,12 +66,14 @@ def calculate_iou(bbox1:list[float],bbox2:list[float])->float:
         return 0.0
     return intersection_area/union_area
 
-def find_best_match(prediction:dict,ground_truth:list[dict])->tuple[float,dict|None]:
+def find_best_match(prediction:dict,ground_truth:list[dict],matched_labels:list[dict])->tuple[float,dict|None]:
     best_iou=0.0
     best_label=None
     for label in ground_truth:
+        if label in matched_labels:
+            continue    
         iou=calculate_iou(
-            prediction["bbox"],
+        prediction["bbox"],
             label["bbox"]
         )
         if iou > best_iou:
@@ -81,16 +83,40 @@ def find_best_match(prediction:dict,ground_truth:list[dict])->tuple[float,dict|N
 def classify_prediction(
         prediction:dict,
         ground_truth:list[dict],
-        iou_threshold:float=0.5
+        matched_labels:list[dict],
+        iou_threshold:float=0.5,
 ):
-    best_iou,best_label=find_best_match(prediction,ground_truth)
+    best_iou,best_label=find_best_match(prediction,ground_truth,matched_labels)
     if best_iou<iou_threshold:
-        return "False Positive"
-    if best_iou>=iou_threshold:
-        if best_label["class_id"]==prediction["class_id"]:
-            return "True Positive"
-        else:
-            return "Classification Error"
+        return "False Positive",None
+    else:
+        if best_label is not None and best_label["class_id"] == prediction["class_id"]:
+            return "True Positive", best_label
+        return "Classification Error", best_label
+
+
+def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int,int,int]:
+    matched_labels=[]
+    true_positive=0
+    false_positive=0
+    classification_error=0
+    false_negative=0
+    for prediction in predictions:
+        status,label=classify_prediction(prediction,ground_truth,matched_labels)
+        if status=="True Positive":
+            if label is not None:
+                matched_labels.append(label)
+            true_positive+=1
+        elif status=="False Positive":
+            false_positive+=1
+        elif status=="Classification Error":
+            if label is not None:
+                matched_labels.append(label)
+            classification_error+=1
+    for label in ground_truth:
+        if label not in matched_labels:
+            false_negative+=1
+    return true_positive,false_positive,classification_error,false_negative
 
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
@@ -126,11 +152,13 @@ def main():
                 image_height
             )
         # print(ground_truth[0])
-        best_iou,best_label=find_best_match(predictions[0],ground_truth)
+        # best_iou,best_label=find_best_match(predictions[0],ground_truth)
         # print(best_iou)
         # print(best_label)
-        temp=classify_prediction(predictions[0],ground_truth,0.5)
-        print(temp)
+        # temp=classify_prediction(predictions[0],ground_truth,0.5)
+        # print(temp)
+        true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+        print(f"true_positive={true_positive},false_positive={false_positive},classification_error={classification_error},false_negative={false_negative}")
         break
 
 if __name__=="__main__":
