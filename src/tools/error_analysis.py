@@ -152,6 +152,22 @@ def write_csv_row(csv_writer,image_path:Path,true_positive:int,false_positive:in
         false_negative
         ]
     )
+def load_csv_report(report_path:Path)->list[dict]:
+    report=[]
+    with report_path.open("r",encoding="utf-8") as file:
+        csv_reader=csv.DictReader(file) #satır satır okur
+        for row in csv_reader:
+            report.append({
+                "image_name":row["image_name"],
+                "true_positive":int(row["true_positive"]),
+                "false_positive":int(row["false_positive"]),
+                "classification_error":int(row["classification_error"]),
+                "false_negative":int(row["false_negative"])
+            })
+    return report
+
+
+
 def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
     total_true_positive=0
     total_false_positive=0
