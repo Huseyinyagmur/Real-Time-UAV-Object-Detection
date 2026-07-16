@@ -326,6 +326,20 @@ def analyze_dataset_class_metrics(image_paths:list[Path],inference:YOLOInference
             total_metrics[class_id]["fp"] += image_metrics[class_id]["fp"]
             total_metrics[class_id]["fn"] += image_metrics[class_id]["fn"]
     return total_metrics
+def print_class_metrics(metrics:dict)->None:
+    print("\n========== PER-CLASS METRICS ==========")
+
+    class_names = {
+        0: "Person",
+        1: "Vehicle"
+    }
+
+    for class_id,values in metrics.items():
+        print(f"{class_names[class_id]}")
+        print(f"Precision : {values['precision'] * 100:.2f}%")
+        print(f"Recall    : {values['recall'] * 100:.2f}%")
+        print(f"F1 Score  : {values['f1_score'] * 100:.2f}%")
+        print("-" * 40)
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -347,10 +361,10 @@ def main():
     metrics = calculate_class_metrics(class_counts)
     print_class_metrics(metrics)
 
-    print("\n========== MODEL METRICS ==========")
-    print(f"Precision : {metrics['precision']:.2%}")
-    print(f"Recall    : {metrics['recall']:.2%}")
-    print(f"F1 Score  : {metrics['f1_score']:.2%}")
+    # print("\n========== MODEL METRICS ==========")
+    # print(f"Precision : {metrics['precision']:.2%}")
+    # print(f"Recall    : {metrics['recall']:.2%}")
+    # print(f"F1 Score  : {metrics['f1_score']:.2%}")
     # print(f"True Positive:{tp},False Positive:{fp},Classification Error:{ce},False Negative:{fn}")
     # project_root=Path(__file__).resolve().parents[2]
     # report=load_csv_report(
