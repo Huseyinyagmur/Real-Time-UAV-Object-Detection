@@ -242,7 +242,41 @@ def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,i
             total_classification_error+=classification_error
     return (total_true_positive,total_false_positive,total_classification_error,total_false_negative)
 
-
+def analyze_class_metrics(predictions:list[dict],ground_truth:list[dict])->dict:
+    matched_labels=[]
+    class_metrics={
+        0:{
+            "tp":0,
+            "fp":0,
+            "fn":0
+        },
+        1:{
+            "tp":0,
+            "fp":0,
+            "fn":0
+        }
+    }
+    for prediction in predictions:
+        status,label=classify_prediction(prediction,ground_truth,matched_labels)
+        if status=="True Positive":
+            class_id=prediction["class_id"]
+            class_metrics[class_id]["tp"]+=1
+            if label is not None:
+                matched_labels.append(label)
+        elif status=="False Positive":
+            class_id=prediction["class_id"]
+            class_metrics[class_id]["fp"]+=1
+        elif status=="Classification Error":
+            prediction_class=prediction["class_id"]
+            class_metrics[prediction_class]["fp"]+=1
+            matched_labels.append(label)
+            label_class=label["class_id"]
+            class_metrics[label_class]["fn"]+=1
+    for label in ground_truth:
+        if label not in matched_labels:
+            class_id=label["class_id"]
+            class_metrics[class_id]["fn"]+=1
+    return class_metrics
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
