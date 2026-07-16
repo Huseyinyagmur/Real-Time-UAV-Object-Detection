@@ -277,6 +277,55 @@ def analyze_class_metrics(predictions:list[dict],ground_truth:list[dict])->dict:
             class_id=label["class_id"]
             class_metrics[class_id]["fn"]+=1
     return class_metrics
+def calculate_class_metrics(class_metrics:dict)->dict:
+    metrics={}
+    for class_id,values in class_metrics.items():
+        tp=values["tp"]
+        fp=values["fp"]
+        fn=values["fn"]
+        if tp+fp==0:
+            precision=0.0
+        else:
+            precision=tp/(tp+fp)
+        if tp+fn==0:
+            recall=0.0
+        else:
+            recall=tp/(tp+fn)
+        if precision+recall==0:
+            f1_score=0.0
+        else:
+            f1_score=2*precision*recall/(precision+recall)
+        metrics[class_id]={
+            "precision":precision,
+            "recall":recall,
+            "f1_score":f1_score
+        }
+    return metrics
+def analyze_dataset_class_metrics(image_paths:list[Path],inference:YOLOInference)->dict:
+    total_metrics = {
+        0: {"tp":0,"fp":0,"fn":0},
+        1: {"tp":0,"fp":0,"fn":0}
+    }
+
+    for image_path in image_paths:
+        results=inference.predict(image_path)
+        result=results[0]
+        predictions=extract_predictions(result)
+        label_path=Path("../dataset/yolo_2class/labels/val")/f"{image_path.stem}.txt"
+        ground_truth=load_ground_truth(label_path)
+        image_width,image_height=result.orig_shape
+        for label in ground_truth:
+            label["bbox"]=yolo_to_xyxy(
+                label["bbox"],
+                image_width,
+                image_height
+            )
+        image_metrics=analyze_class_metrics(predictions,ground_truth)
+        for class_id in total_metrics:
+            total_metrics[class_id]["tp"] += image_metrics[class_id]["tp"]
+            total_metrics[class_id]["fp"] += image_metrics[class_id]["fp"]
+            total_metrics[class_id]["fn"] += image_metrics[class_id]["fn"]
+    return total_metrics
 def main():
     dataset_path=Path("../dataset/yolo_2class/images/val")
     image_paths=load_images(dataset_path)
@@ -290,7 +339,13 @@ def main():
          image_paths,
          inference
      )
-    metrics = calculate_metrics(tp, fp, fn)
+    class_counts=analyze_dataset_class_metrics(
+        image_paths,
+        inference
+    )
+
+    metrics = calculate_class_metrics(class_counts)
+    print_class_metrics(metrics)
 
     print("\n========== MODEL METRICS ==========")
     print(f"Precision : {metrics['precision']:.2%}")
