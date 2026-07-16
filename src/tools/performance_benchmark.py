@@ -23,11 +23,17 @@ def benchmark_dataset(image_paths:list[Path],inference:YOLOInference)->dict:
     return{
         "total_time":total_time,
         "max_latency" :max_time,
-        "min_latency ":min_time,
+        "min_latency":min_time,
         "average_latency":average_latency,
         "fps":fps
     }
-
+def print_performance_metrics(metrics:dict)->None:
+        print("\n========== PERFORMANCE BENCHMARK ==========")
+        print(f"Total Time      : {metrics['total_time']:.2f} s")
+        print(f"Average Latency : {metrics['average_latency'] * 1000:.2f} ms")
+        print(f"Minimum Latency : {metrics['min_latency'] * 1000:.2f} ms")
+        print(f"Maximum Latency : {metrics['max_latency'] * 1000:.2f} ms")
+        print(f"FPS             : {metrics['fps']:.2f}")
 def main():
     dataset_path=Path("../dataset/yolo_2class")
     image_directory=dataset_path/"images"/"val"
@@ -40,8 +46,8 @@ def main():
         class_ids=config.class_ids
     )
     metrics=benchmark_dataset(image_path,inference)
-    print(metrics["fps"])
-    print(metrics["average_latency"])
+    print_performance_metrics(metrics)
+
 
 if __name__=="__main__":
     main()
