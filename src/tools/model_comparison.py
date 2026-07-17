@@ -24,3 +24,10 @@ def evaluate_model(model_path:Path,image_paths:list[Path])->dict:
     "average_latency": benchmark["average_latency"],
     "classification_error": ce
     }
+def compare_models(model_paths:list[Path],image_paths:list[Path])->list[dict]:
+    results=[]
+    for model_path in model_paths:
+        result=evaluate_model(model_path,image_paths)
+        results.append(result)
+
+    return results
