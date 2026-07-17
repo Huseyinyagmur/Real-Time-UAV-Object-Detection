@@ -69,7 +69,10 @@ def main():
     results=compare_models(model_paths,image_paths)
     print_model_comparison(results)
 
+#Model seçimi, en yüksek F1 skoruna göre değil; uygulamanın gerçek zamanlı gereksinimleri, doğruluk ihtiyacı ve donanım kısıtları birlikte değerlendirilerek yapılmalıdır.
+#FPS ≈ 1000 / Latency(ms)
 
+#FPS ve latency birbirini tamamlayan iki performans metriğidir. FPS sistemin saniyede işlediği görüntü sayısını gösterirken, latency tek bir görüntünün işlenme süresini ifade eder. Gerçek zamanlı uygulamalarda düşük latency, hedefe hızlı tepki verebilmek açısından kritik öneme sahiptir.
 
 if __name__=="__main__":
     main()
