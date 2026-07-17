@@ -31,3 +31,35 @@ def compare_models(model_paths:list[Path],image_paths:list[Path])->list[dict]:
         results.append(result)
 
     return results
+
+def print_model_comparison(results:list[dict])->None:
+    print("\n========== MODEL COMPARISON ==========")
+    print(
+        f"{'Model':<12}"
+        f"{'Precision':<12}"
+        f"{'Recall':<12}"
+        f"{'F1 Score':<12}"
+        f"{'FPS':<10}"
+        f"{'Latency(ms)':<15}"
+        f"{'CE':<6}"
+    )
+    print("-" * 79)
+
+    for result in results:
+        print(
+            f"{result['model']:<12}"
+            f"{result['precision'] * 100:<12.2f}"
+            f"{result['recall'] * 100:<12.2f}"
+            f"{result['f1_score'] * 100:<12.2f}"
+            f"{result['fps']:<10.2f}"
+            f"{result['average_latency'] * 1000:<15.2f}"
+            f"{result['classification_error']:<6}"
+        )
+
+def main():
+    
+
+
+
+if __name__=="__main__":
+    main()
