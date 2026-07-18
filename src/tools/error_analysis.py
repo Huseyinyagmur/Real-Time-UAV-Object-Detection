@@ -224,7 +224,7 @@ def analyze_dataset(image_paths:list[Path],inference:YOLOInference,confidence:fl
         )
 
         for image_path in image_paths:
-            results=inference.predict(image_path)
+            results=inference.predict(image_path,confidence)
             result=results[0]
             predictions=extract_predictions(result)
             label_path=Path("../dataset/yolo_2class/labels/val")/f"{image_path.stem}.txt"

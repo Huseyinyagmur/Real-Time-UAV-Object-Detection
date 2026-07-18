@@ -1,7 +1,7 @@
 from pathlib import Path
 from core.yolo_inference import YOLOInference
 from core.tracking_config import TrackingConfig
-from tools.error_analysis import analyze_dataset,calculate_metrics
+from tools.error_analysis import analyze_dataset,calculate_metrics,load_images
 import matplotlib.pyplot as plt
 import numpy as np
 def calculate_precision_recall_curve(inference:YOLOInference,image_paths:list[dict],start_confidence:float =0.20,end_confidence:float=0.90,step:float =0.02)->list[tuple[float, float, float]]:
@@ -11,6 +11,8 @@ def calculate_precision_recall_curve(inference:YOLOInference,image_paths:list[di
         tp,fp,_,fn,_=analyze_dataset(image_paths,inference,confidence)
         metrics=calculate_metrics(tp,fp,fn)
         pr_points.append((confidence,metrics["precision"],metrics["recall"]))
+    print(pr_points)
+
     return pr_points
 def plot_precision_recall_curve(pr_points:list[tuple[float,float,float]], title:str="Precision-Recall Curve",save_path=None):
     precision=[]
@@ -30,10 +32,21 @@ def plot_precision_recall_curve(pr_points:list[tuple[float,float,float]], title:
     if save_path is not None:
         plt.savefig(save_path,dpi=300)
     plt.show()
-
+    plt.close()
+    print(len(pr_points))
+    print(pr_points[:5])
 def main():
     config=TrackingConfig()
-    inference=YOLOInference()
+    dataset_path=Path("../dataset/yolo_2class/images/val")
+    image_paths=load_images(dataset_path)
+    inference=YOLOInference(
+        model_path=config.model_path,
+        image_size=config.image_size,
+        confidence=config.confidence,
+        class_ids=config.class_ids
+    )
+    pr_points=calculate_precision_recall_curve(inference,image_paths)
+    plot_precision_recall_curve(pr_points)
 
 if __name__=="__main__":
     main()
