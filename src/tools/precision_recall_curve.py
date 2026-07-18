@@ -11,8 +11,6 @@ def calculate_precision_recall_curve(inference:YOLOInference,image_paths:list[di
         tp,fp,_,fn,_=analyze_dataset(image_paths,inference,confidence)
         metrics=calculate_metrics(tp,fp,fn)
         pr_points.append((confidence,metrics["precision"],metrics["recall"]))
-    print(pr_points)
-
     return pr_points
 def plot_precision_recall_curve(pr_points:list[tuple[float,float,float]], title:str="Precision-Recall Curve",save_path=None):
     precision=[]
@@ -33,8 +31,6 @@ def plot_precision_recall_curve(pr_points:list[tuple[float,float,float]], title:
         plt.savefig(save_path,dpi=300)
     plt.show()
     plt.close()
-    print(len(pr_points))
-    print(pr_points[:5])
 def main():
     config=TrackingConfig()
     dataset_path=Path("../dataset/yolo_2class/images/val")
