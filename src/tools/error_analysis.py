@@ -204,11 +204,12 @@ def calculate_metrics(true_positive:int,false_positive:int,false_negative:int)->
         "f1_score":f1_score
     }
    
-def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int]:
+def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int,list[tuple[int,int]]]:
     total_true_positive=0
     total_false_positive=0
     total_false_negative=0
     total_classification_error=0
+    matches=[]
     project_root=Path(__file__).resolve().parents[2]
     output_directory=project_root/"output"
     output_directory.mkdir(parents=True,exist_ok=True)
@@ -236,14 +237,15 @@ def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,i
                     image_width,
                     image_height
                 )
-            true_positive,false_positive,classification_error,false_negative=analyze_image(predictions,ground_truth)
+            true_positive,false_positive,classification_error,false_negative,image_matches=analyze_image(predictions,ground_truth)
             write_csv_row(csv_writer,image_path,true_positive,false_positive,classification_error,false_negative,)
             save_error_image(image_path,result,false_positive,false_negative)
             total_true_positive+=true_positive
             total_false_negative+=false_negative
             total_false_positive+=false_positive
             total_classification_error+=classification_error
-    return (total_true_positive,total_false_positive,total_classification_error,total_false_negative)
+            matches.extend(image_matches)
+    return (total_true_positive,total_false_positive,total_classification_error,total_false_negative,matches)
 
 def analyze_class_metrics(predictions:list[dict],ground_truth:list[dict])->dict:
     matched_labels=[]

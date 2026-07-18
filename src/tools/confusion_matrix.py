@@ -1,5 +1,8 @@
 import numpy as np
 from pathlib import Path
+from tools.error_analysis import load_images,analyze_dataset
+from core.tracking_config import TrackingConfig
+from core.yolo_inference import YOLOInference
 def build_confusion_matrix(matches,class_names):
     num_classes=len(class_names)
     confusion_matrix=np.zeros((num_classes,num_classes),dtype=int)
@@ -24,6 +27,23 @@ def print_confusion_matrix(confusion_matrix, class_names):
 
         print()
 def main():
-    image_paths=Path("dataset/yolo_2class/images/val")
+    class_names = [
+    "Person",
+    "Car"
+]
+    config=TrackingConfig()
+    inference=YOLOInference(
+        model_path=config.model_path,
+        confidence=config.confidence,
+        image_size=config.image_size,
+        class_ids=config.class_ids
+    )
+    image_paths=Path("../dataset/yolo_2class/images/val")
+    image_path=load_images(image_paths)
+    tp,fp,ce,fn,matches=analyze_dataset(image_path,inference)
+    confusion_matrix=build_confusion_matrix(matches,class_names)
+    print_confusion_matrix(confusion_matrix,class_names)
+    
+
 if __name__=="__main__":
     main()
