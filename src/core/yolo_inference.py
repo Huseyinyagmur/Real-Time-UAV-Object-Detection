@@ -23,10 +23,10 @@ class YOLOInference:
             raise InferenceError(
                 f"Model could not be loaded: {self.model_path}"
             ) from exc
-    def predict(self,frame:object)->list[Any]:
+    def predict(self,frame:object,confidence: float = 0.2)->list[Any]:
         results=self.model.predict(
             source=frame,
-            conf=self.confidence,
+            conf=confidence,
             imgsz=self.image_size,
             classes=list(self.class_ids),#tuple ı geçici olarak liste çeviriyoruz
             verbose=False

@@ -98,7 +98,7 @@ def classify_prediction(
         return "Classification Error", best_label
 
 
-def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int,int,int,list[tuple[int,int]]]:
+def analyze_image(predictions:list[dict],ground_truth:list[dict],confidence:float)->tuple[int,int,int,int,list[tuple[int,int]]]:
     matched_labels=[]
     matches=[]
     true_positive=0
@@ -203,8 +203,7 @@ def calculate_metrics(true_positive:int,false_positive:int,false_negative:int)->
         "recall":recall,    
         "f1_score":f1_score
     }
-   
-def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,int,int,int,list[tuple[int,int]]]:
+def analyze_dataset(image_paths:list[Path],inference:YOLOInference,confidence:float)->tuple[int,int,int,int,list[tuple[int,int]]]:
     total_true_positive=0
     total_false_positive=0
     total_false_negative=0
@@ -237,7 +236,7 @@ def analyze_dataset(image_paths:list[Path],inference:YOLOInference)->tuple[int,i
                     image_width,
                     image_height
                 )
-            true_positive,false_positive,classification_error,false_negative,image_matches=analyze_image(predictions,ground_truth)
+            true_positive,false_positive,classification_error,false_negative,image_matches=analyze_image(predictions,ground_truth,confidence)
             write_csv_row(csv_writer,image_path,true_positive,false_positive,classification_error,false_negative,)
             save_error_image(image_path,result,false_positive,false_negative)
             total_true_positive+=true_positive
