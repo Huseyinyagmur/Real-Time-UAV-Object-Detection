@@ -15,11 +15,11 @@ def print_confusion_matrix(confusion_matrix, class_names):
     print("\n========== CONFUSION MATRIX ==========\n")
 
     print(f"{'GT\\Pred':<12}", end="")
-    for class_name in class_names.values():
+    for class_name in class_names:
         print(f"{class_name:<10}", end="")
     print()
 
-    for gt_class, class_name in class_names.items():
+    for gt_class, class_name in enumerate(class_names):
         print(f"{class_name:<12}", end="")
 
         for pred_class in range(len(class_names)):
