@@ -98,8 +98,9 @@ def classify_prediction(
         return "Classification Error", best_label
 
 
-def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int,int,int]:
+def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int,int,int,list[tuple[int,int]]]:
     matched_labels=[]
+    matches=[]
     true_positive=0
     false_positive=0
     classification_error=0
@@ -109,17 +110,19 @@ def analyze_image(predictions:list[dict],ground_truth:list[dict])->tuple[int,int
         if status=="True Positive":
             if label is not None:
                 matched_labels.append(label)
+                matches.append((label["class_id"],prediction["class_id"]))
             true_positive+=1
         elif status=="False Positive":
             false_positive+=1
         elif status=="Classification Error":
             if label is not None:
                 matched_labels.append(label)
+                matches.append((label["class_id"],prediction["class_id"]))
             classification_error+=1
     for label in ground_truth:
         if label not in matched_labels:
             false_negative+=1
-    return true_positive,false_positive,classification_error,false_negative
+    return true_positive,false_positive,classification_error,false_negative,matches
 def save_error_image(
         image_path:Path,
         result,

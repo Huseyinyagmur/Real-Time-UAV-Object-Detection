@@ -1,5 +1,5 @@
 import numpy as np
-
+from pathlib import Path
 def build_confusion_matrix(matches,class_names):
     num_classes=len(class_names)
     confusion_matrix=np.zeros((num_classes,num_classes),dtype=int)
@@ -24,7 +24,6 @@ def print_confusion_matrix(confusion_matrix, class_names):
 
         print()
 def main():
-
-
+    image_paths=Path("dataset/yolo_2class/images/val")
 if __name__=="__main__":
     main()
